@@ -1,0 +1,4 @@
+interface:
+  display_name: "Memory"
+  short_description: "Track persistent findings across threads"
+  default_prompt: "Use $memory to recall, add, update, and resolve persistent review findings for the current project."

@@ -1,0 +1,8 @@
+.DS_Store
+.build
+.derivedData
+.sourcepackages
+.home
+*.xcuserstate
+xcuserdata/
+skills/
