@@ -98,7 +98,8 @@ public struct DevicePhotoLibraryService: PhotoLibraryServiceProtocol {
 
         return MediaAsset(
             id: asset.localIdentifier,
-            name: PHAssetResource.assetResources(for: asset).first?.originalFilename ?? fallbackName(for: kind, createdAt: createdAt),
+            // Avoid faulting original metadata for every asset during bulk scans.
+            name: fallbackName(for: kind, createdAt: createdAt),
             kind: kind,
             byteSize: estimatedBytes,
             checksum: nil,
@@ -275,4 +276,68 @@ public struct DeviceContactsCleanupService: ContactsCleanupServiceProtocol {
         }
     }
     #endif
+}
+
+public struct DeviceCleanupExecutionService: CleanupExecutionServiceProtocol {
+    public init() {}
+
+    public func executeDelete(for assets: [MediaAsset]) async throws -> CleanupExecutionResult {
+        guard !assets.isEmpty else {
+            return CleanupExecutionResult(
+                deletedAssetIDs: [],
+                deletedCount: 0,
+                reclaimedBytes: 0,
+                failures: []
+            )
+        }
+
+        #if canImport(Photos)
+        let identifiers = assets.map(\.id)
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+        var fetchedAssets: [PHAsset] = []
+        fetchedAssets.reserveCapacity(fetchResult.count)
+
+        fetchResult.enumerateObjects { asset, _, _ in
+            fetchedAssets.append(asset)
+        }
+
+        let fetchedIDs = Set(fetchedAssets.map(\.localIdentifier))
+        let failures = assets.compactMap { asset -> CleanupExecutionFailure? in
+            guard !fetchedIDs.contains(asset.id) else {
+                return nil
+            }
+            return CleanupExecutionFailure(
+                assetID: asset.id,
+                assetName: asset.name,
+                reason: "The photo could not be found in the current library."
+            )
+        }
+
+        if !fetchedAssets.isEmpty {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                PHPhotoLibrary.shared().performChanges({
+                    PHAssetChangeRequest.deleteAssets(fetchedAssets as NSArray)
+                }) { success, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if success {
+                        continuation.resume(returning: ())
+                    } else {
+                        continuation.resume(throwing: CleanupExecutionServiceError.unsupported)
+                    }
+                }
+            }
+        }
+
+        let deletedAssets = assets.filter { fetchedIDs.contains($0.id) }
+        return CleanupExecutionResult(
+            deletedAssetIDs: deletedAssets.map(\.id),
+            deletedCount: deletedAssets.count,
+            reclaimedBytes: deletedAssets.reduce(Int64.zero) { $0 + $1.byteSize },
+            failures: failures
+        )
+        #else
+        throw CleanupExecutionServiceError.unsupported
+        #endif
+    }
 }

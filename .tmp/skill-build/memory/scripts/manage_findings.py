@@ -3,6 +3,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -80,9 +81,14 @@ def get_project(data: dict[str, Any], project_root: str, project_label: str | No
 
 def finding_sort_key(finding: dict[str, Any]) -> tuple[int, Any]:
     value = str(finding["id"])
+    severity_match = re.fullmatch(r"P(\d+)(?:-(\d+))?", value)
+    if severity_match:
+        major = int(severity_match.group(1))
+        minor = int(severity_match.group(2)) if severity_match.group(2) is not None else -1
+        return (0, major, minor)
     if value.isdigit():
-        return (0, int(value))
-    return (1, value)
+        return (1, int(value))
+    return (2, value)
 
 
 def find_finding(project: dict[str, Any], finding_id: str) -> dict[str, Any] | None:

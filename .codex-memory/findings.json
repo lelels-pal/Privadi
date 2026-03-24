@@ -1,0 +1,322 @@
+{
+  "version": 1,
+  "projects": {
+    "/Volumes/SSD_Mac/Universal Projects/privadi": {
+      "project_root": "/Volumes/SSD_Mac/Universal Projects/privadi",
+      "project_label": "privadi",
+      "created_at": "2026-03-24T00:15:57+00:00",
+      "updated_at": "2026-03-24T08:43:13+00:00",
+      "findings": [
+        {
+          "id": "P0",
+          "severity": "P0",
+          "title": "Cleanup execution flow is not implemented",
+          "details": "The app can analyze and present categories, but the main CTA only updates status text and there is no service API for delete, compress, merge, or apply-review actions.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Views/RootView.swift#L442",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/ServiceProtocols.swift#L4"
+          ],
+          "source": "2026-03-24 release-readiness review",
+          "created_at": "2026-03-24T00:15:57+00:00",
+          "updated_at": "2026-03-24T08:14:50+00:00",
+          "resolved_at": "2026-03-24T08:14:50+00:00",
+          "resolution_note": "Implemented cleanup review and execution flow with explicit delete confirmation, live photo-library deletion service wiring, and dashboard refresh after execution.",
+          "history": [
+            {
+              "at": "2026-03-24T00:15:57+00:00",
+              "action": "imported",
+              "note": null
+            },
+            {
+              "at": "2026-03-24T08:14:50+00:00",
+              "action": "resolved",
+              "note": "Implemented cleanup review and execution flow with explicit delete confirmation, live photo-library deletion service wiring, and dashboard refresh after execution."
+            }
+          ]
+        },
+        {
+          "id": "P0-1",
+          "severity": "P0",
+          "title": "Billing flow is scaffolded and lacks restore",
+          "details": "The live environment uses MockSubscriptionService, the paywall hardcodes prices, and there is no restore or manage-subscription flow.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/App/AppEnvironment.swift#L52",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/OfflineServices.swift#L211",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Views/RootView.swift#L302"
+          ],
+          "source": "2026-03-24 release-readiness review",
+          "created_at": "2026-03-24T00:15:57+00:00",
+          "updated_at": "2026-03-24T08:14:50+00:00",
+          "resolved_at": "2026-03-24T08:14:50+00:00",
+          "resolution_note": "Replaced the live mock billing path with StoreKit-backed subscription loading, purchase, restore, and manage-subscription paywall wiring.",
+          "history": [
+            {
+              "at": "2026-03-24T00:15:57+00:00",
+              "action": "imported",
+              "note": null
+            },
+            {
+              "at": "2026-03-24T08:14:50+00:00",
+              "action": "resolved",
+              "note": "Replaced the live mock billing path with StoreKit-backed subscription loading, purchase, restore, and manage-subscription paywall wiring."
+            }
+          ]
+        },
+        {
+          "id": "P0-2",
+          "severity": "P0",
+          "title": "Vault is not production-safe yet",
+          "details": "Vault files are stored under temporaryDirectory, the record index is in memory only, and the UI writes a sample record with the hardcoded passcode 1234.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/OfflineServices.swift#L129",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/OfflineServices.swift#L172",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/ViewModels/AppViewModel.swift#L76"
+          ],
+          "source": "2026-03-24 release-readiness review",
+          "created_at": "2026-03-24T00:15:57+00:00",
+          "updated_at": "2026-03-24T08:14:50+00:00",
+          "resolved_at": "2026-03-24T08:14:50+00:00",
+          "resolution_note": "Moved vault storage to durable app-support storage, persisted the record index, removed the hardcoded passcode path, and added keychain-backed setup with optional biometric unlock.",
+          "history": [
+            {
+              "at": "2026-03-24T00:15:57+00:00",
+              "action": "imported",
+              "note": null
+            },
+            {
+              "at": "2026-03-24T08:14:50+00:00",
+              "action": "resolved",
+              "note": "Moved vault storage to durable app-support storage, persisted the record index, removed the hardcoded passcode path, and added keychain-backed setup with optional biometric unlock."
+            }
+          ]
+        },
+        {
+          "id": "P1",
+          "severity": "P1",
+          "title": "Duplicate detection is disabled on live device assets",
+          "details": "The live asset mapper always sets checksum to nil, while duplicate detection groups only assets with non-nil checksums.",
+          "status": "open",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/DeviceServices.swift#L94",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/OfflineServices.swift#L23"
+          ],
+          "source": "2026-03-24 release-readiness review",
+          "created_at": "2026-03-24T00:15:57+00:00",
+          "updated_at": "2026-03-24T00:15:57+00:00",
+          "resolved_at": null,
+          "resolution_note": null,
+          "history": [
+            {
+              "at": "2026-03-24T00:15:57+00:00",
+              "action": "imported",
+              "note": null
+            }
+          ]
+        },
+        {
+          "id": "P1-1",
+          "severity": "P1",
+          "title": "Reclaimable space is double-counted",
+          "details": "The dashboard adds compression savings on top of deletion reclaimable bytes even though the compression estimate is derived from the same selected assets.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/ViewModels/AppViewModel.swift#L127",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/OfflineServices.swift#L73"
+          ],
+          "source": "2026-03-24 release-readiness review",
+          "created_at": "2026-03-24T00:15:57+00:00",
+          "updated_at": "2026-03-24T08:42:50+00:00",
+          "resolved_at": "2026-03-24T08:42:50+00:00",
+          "resolution_note": "Resolved by separating delete reclaimable bytes from compression estimates in the dashboard summary path; the dashboard no longer adds compression savings on top of deletion bytes.",
+          "history": [
+            {
+              "at": "2026-03-24T00:15:57+00:00",
+              "action": "imported",
+              "note": null
+            },
+            {
+              "at": "2026-03-24T08:42:50+00:00",
+              "action": "resolved",
+              "note": "Resolved by separating delete reclaimable bytes from compression estimates in the dashboard summary path; the dashboard no longer adds compression savings on top of deletion bytes."
+            }
+          ]
+        },
+        {
+          "id": "P1-2",
+          "severity": "P1",
+          "title": "Breach-check dataset is demo-sized",
+          "details": "The local breach index bundled in the app has only three hashes, so the feature is not production-credible yet.",
+          "status": "open",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/App/AppEnvironment.swift#L60",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Resources/breach_hashes.txt#L1"
+          ],
+          "source": "2026-03-24 release-readiness review",
+          "created_at": "2026-03-24T00:15:57+00:00",
+          "updated_at": "2026-03-24T00:15:57+00:00",
+          "resolved_at": null,
+          "resolution_note": null,
+          "history": [
+            {
+              "at": "2026-03-24T00:15:57+00:00",
+              "action": "imported",
+              "note": null
+            }
+          ]
+        },
+        {
+          "id": "P1-3",
+          "severity": "P1",
+          "title": "Release validation coverage is too thin",
+          "details": "The repo has only four unit tests and no iOS UI, device, purchase, or permission-flow coverage.",
+          "status": "open",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift#L1",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/scripts/test.sh#L1"
+          ],
+          "source": "2026-03-24 release-readiness review",
+          "created_at": "2026-03-24T00:15:57+00:00",
+          "updated_at": "2026-03-24T00:15:57+00:00",
+          "resolved_at": null,
+          "resolution_note": null,
+          "history": [
+            {
+              "at": "2026-03-24T00:15:57+00:00",
+              "action": "imported",
+              "note": null
+            }
+          ]
+        },
+        {
+          "id": "P2",
+          "severity": "P2",
+          "title": "Heavy scan work is main-actor bound",
+          "details": "The service protocols are MainActor-isolated and the live photo scan enumerates the full library on that path, which risks UI stalls on large libraries.",
+          "status": "open",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/ServiceProtocols.swift#L3",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/DeviceServices.swift#L41"
+          ],
+          "source": "2026-03-24 release-readiness review",
+          "created_at": "2026-03-24T00:15:57+00:00",
+          "updated_at": "2026-03-24T00:15:57+00:00",
+          "resolved_at": null,
+          "resolution_note": null,
+          "history": [
+            {
+              "at": "2026-03-24T00:15:57+00:00",
+              "action": "imported",
+              "note": null
+            }
+          ]
+        },
+        {
+          "id": "R-2026-03-24-1",
+          "severity": "P1",
+          "title": "Configured vault was treated as writable after relaunch",
+          "details": "A configured vault reloaded as configured but locked after relaunch, while the dashboard save action still attempted to write immediately. Because the root key only lived in memory, post-relaunch writes failed and the recovery copy suggested reconfiguration instead of unlock.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/ViewModels/AppViewModel.swift#L137"
+          ],
+          "source": "2026-03-24 uncommitted code review",
+          "created_at": "2026-03-24T08:42:51+00:00",
+          "updated_at": "2026-03-24T08:43:13+00:00",
+          "resolved_at": "2026-03-24T08:43:13+00:00",
+          "resolution_note": "Implemented explicit vault access state plus unlock flows, added a vault unlock service entry point for configured-but-locked vaults, and covered relaunch/save/unlock regressions with tests.",
+          "history": [
+            {
+              "at": "2026-03-24T08:42:51+00:00",
+              "action": "created",
+              "note": "Imported review finding before fix."
+            },
+            {
+              "at": "2026-03-24T08:43:13+00:00",
+              "action": "resolved",
+              "note": "Implemented explicit vault access state plus unlock flows, added a vault unlock service entry point for configured-but-locked vaults, and covered relaunch/save/unlock regressions with tests."
+            }
+          ]
+        },
+        {
+          "id": "R-2026-03-24-2",
+          "severity": "P1",
+          "title": "Subscribed users were sent back to the paywall on scan failure",
+          "details": "After purchase or restore, a live-scan failure reused the paywall return stage. Active subscribers could land back on the purchase screen instead of retrying permissions or scan from a subscribed state.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/ViewModels/AppViewModel.swift#L286"
+          ],
+          "source": "2026-03-24 uncommitted code review",
+          "created_at": "2026-03-24T08:42:51+00:00",
+          "updated_at": "2026-03-24T08:43:13+00:00",
+          "resolved_at": "2026-03-24T08:43:13+00:00",
+          "resolution_note": "Changed subscribed scan-failure recovery to return to the permissions stage with active subscription state preserved, and added purchase/restore scan-failure regression tests.",
+          "history": [
+            {
+              "at": "2026-03-24T08:42:51+00:00",
+              "action": "created",
+              "note": "Imported review finding before fix."
+            },
+            {
+              "at": "2026-03-24T08:43:13+00:00",
+              "action": "resolved",
+              "note": "Changed subscribed scan-failure recovery to return to the permissions stage with active subscription state preserved, and added purchase/restore scan-failure regression tests."
+            }
+          ]
+        },
+        {
+          "id": "R-2026-03-24-3",
+          "severity": "P2",
+          "title": "Cleanup success was overwritten by post-delete refresh failure",
+          "details": "Cleanup execution could succeed, but any error while reloading the dashboard afterward changed the phase to failed and showed a generic failure message. Deleting the last remaining assets was a concrete trigger because the refresh could return an empty-library error.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/ViewModels/AppViewModel.swift#L299"
+          ],
+          "source": "2026-03-24 uncommitted code review",
+          "created_at": "2026-03-24T08:42:51+00:00",
+          "updated_at": "2026-03-24T08:43:13+00:00",
+          "resolved_at": "2026-03-24T08:43:13+00:00",
+          "resolution_note": "Separated cleanup execution success from post-delete refresh success, preserved completed cleanup results on refresh errors including empty-library cases, and added regression tests.",
+          "history": [
+            {
+              "at": "2026-03-24T08:42:51+00:00",
+              "action": "created",
+              "note": "Imported review finding before fix."
+            },
+            {
+              "at": "2026-03-24T08:43:13+00:00",
+              "action": "resolved",
+              "note": "Separated cleanup execution success from post-delete refresh success, preserved completed cleanup results on refresh errors including empty-library cases, and added regression tests."
+            }
+          ]
+        },
+        {
+          "id": "release-apple-developer-account",
+          "severity": "P2",
+          "title": "App Store release is blocked by missing Apple Developer account",
+          "details": "The project currently does not have an Apple Developer account because of budget constraints. Continue implementing and hardening the app toward App Store readiness, but treat account-dependent release tasks such as App Store Connect setup, StoreKit product configuration, signing/distribution, and final submission as blocked until the account is available.",
+          "status": "blocked",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi"
+          ],
+          "source": "2026-03-24 user constraint",
+          "created_at": "2026-03-24T08:18:16+00:00",
+          "updated_at": "2026-03-24T08:18:16+00:00",
+          "resolved_at": null,
+          "resolution_note": null,
+          "history": [
+            {
+              "at": "2026-03-24T08:18:16+00:00",
+              "action": "created",
+              "note": "Keep building toward production quality and App Store compliance while deferring account-gated release steps."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

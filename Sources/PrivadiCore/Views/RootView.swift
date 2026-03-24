@@ -34,6 +34,9 @@ public struct RootView: View {
         }
         .preferredColorScheme(.light)
         .animation(.spring(response: 0.58, dampingFraction: 0.88), value: stageIdentifier)
+        .task {
+            await viewModel.bootstrap()
+        }
     }
 
     @ViewBuilder
@@ -48,8 +51,15 @@ public struct RootView: View {
             )
         case .paywall:
             HardPaywallView(
+                annualProduct: viewModel.product(for: .annual),
+                monthlyProduct: viewModel.product(for: .monthly),
+                purchaseInProgress: viewModel.purchaseInProgress,
+                restoreInProgress: viewModel.restoreInProgress,
+                statusText: viewModel.paywallStatusText,
+                manageSubscriptionsURL: viewModel.subscriptionState.manageSubscriptionsURL,
                 annualAction: viewModel.startAnnualTrial,
                 monthlyAction: viewModel.startMonthlyPlan,
+                restoreAction: viewModel.restorePurchases,
                 previewAction: viewModel.startLimitedPreview
             )
         case .scanning:
@@ -261,17 +271,38 @@ public struct PermissionsPrimerView: View {
 }
 
 public struct HardPaywallView: View {
+    let annualProduct: SubscriptionProduct?
+    let monthlyProduct: SubscriptionProduct?
+    let purchaseInProgress: SubscriptionPlan?
+    let restoreInProgress: Bool
+    let statusText: String?
+    let manageSubscriptionsURL: URL?
     let annualAction: () -> Void
     let monthlyAction: () -> Void
+    let restoreAction: () -> Void
     let previewAction: () -> Void
 
     public init(
+        annualProduct: SubscriptionProduct?,
+        monthlyProduct: SubscriptionProduct?,
+        purchaseInProgress: SubscriptionPlan?,
+        restoreInProgress: Bool,
+        statusText: String?,
+        manageSubscriptionsURL: URL?,
         annualAction: @escaping () -> Void,
         monthlyAction: @escaping () -> Void,
+        restoreAction: @escaping () -> Void,
         previewAction: @escaping () -> Void
     ) {
+        self.annualProduct = annualProduct
+        self.monthlyProduct = monthlyProduct
+        self.purchaseInProgress = purchaseInProgress
+        self.restoreInProgress = restoreInProgress
+        self.statusText = statusText
+        self.manageSubscriptionsURL = manageSubscriptionsURL
         self.annualAction = annualAction
         self.monthlyAction = monthlyAction
+        self.restoreAction = restoreAction
         self.previewAction = previewAction
     }
 
@@ -301,27 +332,35 @@ public struct HardPaywallView: View {
 
             PlanCard(
                 badge: "Best value",
-                title: "Annual",
-                price: "$39.99/year",
-                detail: "14-day free trial, less than $3.34 per month",
+                title: annualProduct?.displayName ?? "Annual",
+                price: annualProduct?.displayPrice ?? "Loading price",
+                detail: annualProduct?.detailText ?? "Loading the current App Store pricing",
                 footer: "Priority for people who want the premium flow from day one.",
-                buttonTitle: "Choose Annual",
+                buttonTitle: purchaseInProgress == .annual ? "Processing..." : "Choose Annual",
                 primary: true,
                 compact: compactCards,
+                isDisabled: annualProduct == nil || purchaseInProgress != nil || restoreInProgress,
                 action: annualAction
             )
 
             PlanCard(
                 badge: nil,
-                title: "Monthly",
-                price: "$8.99/month",
-                detail: "Flexible plan with the same private, on-device experience",
+                title: monthlyProduct?.displayName ?? "Monthly",
+                price: monthlyProduct?.displayPrice ?? "Loading price",
+                detail: monthlyProduct?.detailText ?? "Loading the current App Store pricing",
                 footer: "Good if you want shorter commitment while you test the workflow.",
-                buttonTitle: "Choose Monthly",
+                buttonTitle: purchaseInProgress == .monthly ? "Processing..." : "Choose Monthly",
                 primary: false,
                 compact: compactCards,
+                isDisabled: monthlyProduct == nil || purchaseInProgress != nil || restoreInProgress,
                 action: monthlyAction
             )
+
+            if let statusText {
+                Text(statusText)
+                    .font(.system(size: max(14, bodySize - 1), weight: .medium, design: .rounded))
+                    .foregroundStyle(PrivadiTheme.warning)
+            }
 
             ViewThatFits {
                 HStack(spacing: 10) {
@@ -343,6 +382,21 @@ public struct HardPaywallView: View {
                 previewAction()
             }
             .buttonStyle(PrivadiSecondaryButtonStyle())
+            .disabled(purchaseInProgress != nil || restoreInProgress)
+
+            HStack(spacing: 14) {
+                Button(restoreInProgress ? "Restoring..." : "Restore Purchases") {
+                    restoreAction()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(PrivadiTheme.accent)
+                .disabled(restoreInProgress || purchaseInProgress != nil)
+
+                if let manageSubscriptionsURL {
+                    Link("Manage Subscription", destination: manageSubscriptionsURL)
+                        .foregroundStyle(PrivadiTheme.faintInk)
+                }
+            }
 
             Text("Limited Preview scans up to \(ScanScope.preview.assetLimit ?? 30) recent photos or videos from your device. Start a plan when you want the full-library version.")
                 .font(.system(size: max(14, bodySize - 2), weight: .medium, design: .rounded))
@@ -378,16 +432,21 @@ public struct ScanProgressView: View {
 public struct DashboardView: View {
     @ObservedObject var viewModel: AppViewModel
     @State private var email = "compromised@example.com"
-    @State private var selectedCategoryIDs: Set<String> = ["media", "compression", "contacts"]
+    @State private var showVaultSetup = false
+    @State private var showVaultUnlock = false
+    @State private var vaultPasscode = ""
+    @State private var vaultPasscodeConfirmation = ""
+    @State private var vaultUnlockPasscode = ""
+    @State private var enableBiometrics = true
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
     }
 
     public var body: some View {
-        if let summary = viewModel.summary, let selection = viewModel.selection {
-            let categories = cleanupCategories(summary: summary, selection: selection)
-            let reclaimableBytes = selectedReclaimableBytes(for: categories)
+        if let summary = viewModel.summary, viewModel.selection != nil {
+            let categories = viewModel.cleanupCategories
+            let reclaimableBytes = viewModel.selectedReclaimableBytes()
             let isLimitedPreview = viewModel.experienceMode == .limitedPreview
 
             VStack(alignment: .leading, spacing: 22) {
@@ -432,26 +491,20 @@ public struct DashboardView: View {
                     ForEach(categories) { category in
                         CleanupCategoryCard(
                             category: category,
-                            isSelected: selectedCategoryIDs.contains(category.id)
+                            isSelected: viewModel.selectedCleanupCategoryIDs.contains(category.id)
                         ) {
-                            toggleCategory(category.id)
+                            viewModel.toggleCleanupCategory(category.id)
                         }
                     }
                 }
 
                 Button {
-                    if reclaimableBytes > 0 {
-                        viewModel.statusText = isLimitedPreview
-                            ? "Preview prepared offline. Start a plan when you want the full-library version on your own device."
-                            : "Cleanup plan prepared offline. Review the selected categories before deleting."
-                    } else {
-                        viewModel.statusText = "Select a reclaimable category to continue."
-                    }
+                    viewModel.reviewCleanupPlan()
                 } label: {
                     HStack(spacing: 10) {
                         Text(
                             reclaimableBytes > 0
-                                ? (isLimitedPreview ? "Preview \(reclaimableBytes.privadiByteString)" : "Review \(reclaimableBytes.privadiByteString)")
+                                ? (isLimitedPreview ? "Preview \(reclaimableBytes.privadiByteString)" : "Review Delete Plan")
                                 : (isLimitedPreview ? "Preview Cleanup Plan" : "Review Cleanup Plan")
                         )
                         Image(systemName: "arrow.right")
@@ -467,12 +520,22 @@ public struct DashboardView: View {
                 UtilityCard(
                     title: "Secure Vault",
                     bodyText: isLimitedPreview
-                        ? "\(viewModel.vaultRecords.count) preview items are protected locally. Save a sample record to feel the encrypted flow before upgrading."
-                        : "\(viewModel.vaultRecords.count) items are protected locally. Save a sample record to confirm the encrypted flow is working.",
+                        ? "\(viewModel.vaultRecords.count) preview items are protected locally. Vault setup is available once you unlock the full scan."
+                        : vaultBodyText,
                     metric: "Vault items: \(viewModel.vaultRecords.count)",
                     icon: "lock.square.stack.fill",
-                    buttonTitle: isLimitedPreview ? "Save Preview Item Offline" : "Save Sample Offline",
-                    action: viewModel.storeSampleInVault
+                    buttonTitle: vaultButtonTitle(isLimitedPreview: isLimitedPreview),
+                    action: {
+                        if isLimitedPreview {
+                            viewModel.showPaywallFromPreview()
+                        } else if viewModel.vaultAccessState == .unconfigured {
+                            showVaultSetup = true
+                        } else if viewModel.vaultAccessState == .locked {
+                            showVaultUnlock = true
+                        } else {
+                            viewModel.saveSampleToConfiguredVault()
+                        }
+                    }
                 )
 
                 VStack(alignment: .leading, spacing: 16) {
@@ -532,73 +595,98 @@ public struct DashboardView: View {
                     .buttonStyle(PrivadiPrimaryButtonStyle())
                 }
             }
-        }
-    }
-
-    private func cleanupCategories(summary: DashboardSummary, selection: SmartCleanSelection) -> [CleanupCategory] {
-        var categories = [
-            CleanupCategory(
-                id: "media",
-                title: "Auto-Selected Media",
-                metric: selection.estimatedReclaimableBytes.privadiByteString,
-                subtitle: "\(selection.autoSelectedAssets.count) items ready for review",
-                icon: "sparkles.square.filled.on.square",
-                detailLines: [
-                    "\(summary.duplicateGroupCount) duplicate groups",
-                    "\(summary.similarGroupCount) similar groups",
-                    "\(summary.lowQualityCount) low-quality picks",
-                ],
-                estimatedBytes: selection.estimatedReclaimableBytes
-            ),
-            CleanupCategory(
-                id: "compression",
-                title: "Compression Center",
-                metric: max(viewModel.compressionEstimate.savingsBytes, 0).privadiByteString,
-                subtitle: "Large media that can be reduced locally",
-                icon: "video.fill",
-                detailLines: [
-                    "\(summary.largeVideoCount) large videos",
-                    "\(summary.screenshotCount) screenshots",
-                    "\(summary.sloMoCount) slo-mo clips",
-                ],
-                estimatedBytes: max(viewModel.compressionEstimate.savingsBytes, 0)
-            )
-        ]
-
-        if viewModel.experienceMode == .live {
-            categories.append(
-                CleanupCategory(
-                    id: "contacts",
-                    title: "Contact Hygiene",
-                    metric: "\(summary.contactSuggestionCount) fixes",
-                    subtitle: "Duplicate and incomplete entries to review",
-                    icon: "person.crop.circle.badge.checkmark",
-                    detailLines: [
-                        "Review-first merge suggestions",
-                        "No cloud contact matching",
-                        "Pairs with the secure local vault",
-                    ],
-                    estimatedBytes: 0
-                )
-            )
-        }
-
-        return categories
-    }
-
-    private func selectedReclaimableBytes(for categories: [CleanupCategory]) -> Int64 {
-        categories
-            .filter { selectedCategoryIDs.contains($0.id) }
-            .reduce(into: Int64.zero) { partialResult, category in
-                partialResult += category.estimatedBytes
+            .sheet(isPresented: cleanupReviewPresented) {
+                if let reviewPlan = viewModel.cleanupReviewPlan {
+                    CleanupReviewSheet(
+                        plan: reviewPlan,
+                        phase: viewModel.cleanupExecutionPhase,
+                        confirmAction: viewModel.executeCleanupPlan,
+                        cancelAction: viewModel.dismissCleanupReview
+                    )
+                }
             }
+            .sheet(isPresented: $showVaultSetup) {
+                VaultSetupSheet(
+                    isBiometricsAvailable: viewModel.vaultConfiguration.canUseBiometrics,
+                    passcode: $vaultPasscode,
+                    confirmation: $vaultPasscodeConfirmation,
+                    enableBiometrics: $enableBiometrics,
+                    saveAction: {
+                        guard vaultPasscode == vaultPasscodeConfirmation else {
+                            viewModel.statusText = "The vault passcodes do not match."
+                            return
+                        }
+                        viewModel.configureVault(passcode: vaultPasscode, enableBiometrics: enableBiometrics)
+                        vaultPasscode = ""
+                        vaultPasscodeConfirmation = ""
+                        showVaultSetup = false
+                    }
+                )
+            }
+            .sheet(isPresented: $showVaultUnlock) {
+                VaultUnlockSheet(
+                    biometricsEnabled: viewModel.vaultConfiguration.biometricsEnabled,
+                    passcode: $vaultUnlockPasscode,
+                    unlockWithPasscodeAction: {
+                        let passcode = vaultUnlockPasscode
+                        Task {
+                            await viewModel.unlockVault(passcode: passcode)
+                            if viewModel.vaultAccessState == .unlocked {
+                                viewModel.saveSampleToConfiguredVault()
+                                vaultUnlockPasscode = ""
+                                showVaultUnlock = false
+                            }
+                        }
+                    },
+                    unlockWithBiometricsAction: {
+                        Task {
+                            await viewModel.unlockVaultWithBiometrics()
+                            if viewModel.vaultAccessState == .unlocked {
+                                viewModel.saveSampleToConfiguredVault()
+                                showVaultUnlock = false
+                            }
+                        }
+                    }
+                )
+            }
+        }
     }
 
-    private func toggleCategory(_ id: String) {
-        if selectedCategoryIDs.contains(id) {
-            selectedCategoryIDs.remove(id)
-        } else {
-            selectedCategoryIDs.insert(id)
+    private var cleanupReviewPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.cleanupReviewPlan != nil },
+            set: { isPresented in
+                if !isPresented {
+                    viewModel.dismissCleanupReview()
+                }
+            }
+        )
+    }
+
+    private var vaultBodyText: String {
+        if viewModel.vaultAccessState == .unlocked {
+            if viewModel.vaultConfiguration.biometricsEnabled {
+                return "\(viewModel.vaultRecords.count) items are protected locally. New saves use your configured passcode, with biometrics available for unlock."
+            }
+            return "\(viewModel.vaultRecords.count) items are protected locally with your passcode-backed encrypted vault."
+        }
+        if viewModel.vaultAccessState == .locked {
+            return "\(viewModel.vaultRecords.count) items are protected locally. Unlock the vault before saving anything new."
+        }
+        return "Create a private vault passcode and optionally enable Face ID or Touch ID before saving the first protected item."
+    }
+
+    private func vaultButtonTitle(isLimitedPreview: Bool) -> String {
+        if isLimitedPreview {
+            return "Unlock Vault Setup"
+        }
+        switch viewModel.vaultAccessState {
+        case .unconfigured:
+            return "Set Up Secure Vault"
+        case .locked:
+            return "Unlock Vault"
+        case .unlocked:
+            return "Save Sample Offline"
         }
     }
 }
@@ -864,6 +952,7 @@ private struct PlanCard: View {
     let buttonTitle: String
     let primary: Bool
     var compact: Bool = false
+    var isDisabled: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -903,29 +992,21 @@ private struct PlanCard: View {
                     action()
                 }
                 .buttonStyle(PrivadiPrimaryButtonStyle())
+                .disabled(isDisabled)
             } else {
                 Button(buttonTitle) {
                     action()
                 }
                 .buttonStyle(PrivadiSecondaryButtonStyle())
+                .disabled(isDisabled)
             }
         }
         .privadiGlassCard(cornerRadius: 34, padding: compact ? 20 : 24)
     }
 }
 
-private struct CleanupCategory: Identifiable {
-    let id: String
-    let title: String
-    let metric: String
-    let subtitle: String
-    let icon: String
-    let detailLines: [String]
-    let estimatedBytes: Int64
-}
-
 private struct CleanupCategoryCard: View {
-    let category: CleanupCategory
+    let category: CleanupReviewCategory
     let isSelected: Bool
     let action: () -> Void
 
@@ -954,9 +1035,10 @@ private struct CleanupCategoryCard: View {
                 Button {
                     action()
                 } label: {
-                    SelectionIndicator(isSelected: isSelected)
+                    SelectionIndicator(isSelected: isSelected, isDisabled: !category.isSelectable)
                 }
                 .buttonStyle(.plain)
+                .disabled(!category.isSelectable)
             }
 
             VStack(spacing: 12) {
@@ -977,14 +1059,15 @@ private struct CleanupCategoryCard: View {
 
 private struct SelectionIndicator: View {
     let isSelected: Bool
+    let isDisabled: Bool
 
     var body: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(isSelected ? PrivadiTheme.accent : Color.white.opacity(0.62))
+            .fill(isSelected ? PrivadiTheme.accent : Color.white.opacity(isDisabled ? 0.34 : 0.62))
             .frame(width: 28, height: 28)
             .overlay {
                 Circle()
-                    .fill(isSelected ? Color.white : PrivadiTheme.faintInk.opacity(0.45))
+                    .fill(isSelected ? Color.white : PrivadiTheme.faintInk.opacity(isDisabled ? 0.22 : 0.45))
                     .frame(width: 13, height: 13)
             }
             .overlay {
@@ -1010,6 +1093,183 @@ private struct DashboardIconBubble: View {
                 Circle()
                     .stroke(Color.white.opacity(0.84), lineWidth: 1)
             }
+    }
+}
+
+private struct CleanupReviewSheet: View {
+    let plan: CleanupReviewPlan
+    let phase: AppViewModel.CleanupExecutionPhase
+    let confirmAction: () -> Void
+    let cancelAction: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Review Delete Plan")
+                        .font(PrivadiTheme.titleFont(size: 28))
+                        .foregroundStyle(PrivadiTheme.ink)
+
+                    Text("Privadi will only delete the exact items listed below after your confirmation.")
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(PrivadiTheme.mutedInk)
+
+                    Text(plan.estimatedReclaimableBytes.privadiByteString)
+                        .font(PrivadiTheme.valueFont(size: 44))
+                        .foregroundStyle(PrivadiTheme.ink)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(plan.categories) { category in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(category.title)
+                                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(PrivadiTheme.ink)
+
+                                Text(category.subtitle)
+                                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                                    .foregroundStyle(PrivadiTheme.mutedInk)
+                            }
+                            .privadiGlassCard(cornerRadius: 24, padding: 18)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Delete Candidates")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        ForEach(plan.deleteCandidates.prefix(12), id: \.id) { asset in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(asset.name)
+                                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(PrivadiTheme.ink)
+
+                                    Text(asset.byteSize.privadiByteString)
+                                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                                        .foregroundStyle(PrivadiTheme.faintInk)
+                                }
+
+                                Spacer(minLength: 12)
+
+                                Image(systemName: "trash.fill")
+                                    .foregroundStyle(PrivadiTheme.warning)
+                            }
+                            .privadiGlassCard(cornerRadius: 22, padding: 16)
+                        }
+
+                        if plan.deleteCandidates.count > 12 {
+                            Text("+ \(plan.deleteCandidates.count - 12) more selected items")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundStyle(PrivadiTheme.faintInk)
+                        }
+                    }
+                }
+                .padding(24)
+            }
+            .background(PrivadiTheme.background.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        cancelAction()
+                    }
+                    .disabled(isExecuting)
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isExecuting ? "Deleting..." : "Delete Selected") {
+                        confirmAction()
+                    }
+                    .foregroundStyle(PrivadiTheme.warning)
+                    .disabled(isExecuting)
+                }
+            }
+        }
+    }
+
+    private var isExecuting: Bool {
+        if case .executing = phase {
+            return true
+        }
+        return false
+    }
+}
+
+private struct VaultSetupSheet: View {
+    let isBiometricsAvailable: Bool
+    @Binding var passcode: String
+    @Binding var confirmation: String
+    @Binding var enableBiometrics: Bool
+    let saveAction: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Vault Security") {
+                    SecureField("Passcode", text: $passcode)
+                    SecureField("Confirm Passcode", text: $confirmation)
+                }
+
+                if isBiometricsAvailable {
+                    Section("Unlock") {
+                        Toggle("Enable biometric unlock", isOn: $enableBiometrics)
+                    }
+                }
+
+                Section {
+                    Text("Privadi keeps the encrypted vault on your device and stores the vault key material in Keychain.")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(PrivadiTheme.mutedInk)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(PrivadiTheme.background.ignoresSafeArea())
+            .navigationTitle("Set Up Vault")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveAction()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct VaultUnlockSheet: View {
+    let biometricsEnabled: Bool
+    @Binding var passcode: String
+    let unlockWithPasscodeAction: () -> Void
+    let unlockWithBiometricsAction: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Unlock Vault") {
+                    SecureField("Passcode", text: $passcode)
+                    Button("Unlock with Passcode") {
+                        unlockWithPasscodeAction()
+                    }
+                }
+
+                if biometricsEnabled {
+                    Section("Biometrics") {
+                        Button("Unlock with Biometrics") {
+                            unlockWithBiometricsAction()
+                        }
+                    }
+                }
+
+                Section {
+                    Text("Privadi unlocks the vault locally and only keeps the decrypted key material in memory for the current session.")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(PrivadiTheme.mutedInk)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(PrivadiTheme.background.ignoresSafeArea())
+            .navigationTitle("Unlock Vault")
+        }
     }
 }
 

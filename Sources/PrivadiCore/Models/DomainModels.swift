@@ -154,6 +154,104 @@ public struct SmartCleanSelection: Sendable {
     }
 }
 
+public enum CleanupCategoryKind: String, Codable, Sendable {
+    case mediaDelete
+    case compressionReview
+    case contactReview
+}
+
+public struct CleanupReviewCategory: Identifiable, Codable, Sendable, Hashable {
+    public let id: String
+    public let kind: CleanupCategoryKind
+    public let title: String
+    public let metric: String
+    public let subtitle: String
+    public let icon: String
+    public let detailLines: [String]
+    public let estimatedBytes: Int64
+    public let eligibleAssets: [MediaAsset]
+    public let isDestructive: Bool
+    public let isSelectable: Bool
+
+    public init(
+        id: String,
+        kind: CleanupCategoryKind,
+        title: String,
+        metric: String,
+        subtitle: String,
+        icon: String,
+        detailLines: [String],
+        estimatedBytes: Int64,
+        eligibleAssets: [MediaAsset],
+        isDestructive: Bool,
+        isSelectable: Bool
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.metric = metric
+        self.subtitle = subtitle
+        self.icon = icon
+        self.detailLines = detailLines
+        self.estimatedBytes = estimatedBytes
+        self.eligibleAssets = eligibleAssets
+        self.isDestructive = isDestructive
+        self.isSelectable = isSelectable
+    }
+}
+
+public struct CleanupReviewPlan: Sendable, Equatable {
+    public let categories: [CleanupReviewCategory]
+    public let selectedCategoryIDs: Set<String>
+    public let deleteCandidates: [MediaAsset]
+    public let estimatedReclaimableBytes: Int64
+
+    public init(
+        categories: [CleanupReviewCategory],
+        selectedCategoryIDs: Set<String>,
+        deleteCandidates: [MediaAsset],
+        estimatedReclaimableBytes: Int64
+    ) {
+        self.categories = categories
+        self.selectedCategoryIDs = selectedCategoryIDs
+        self.deleteCandidates = deleteCandidates
+        self.estimatedReclaimableBytes = estimatedReclaimableBytes
+    }
+}
+
+public struct CleanupExecutionFailure: Identifiable, Codable, Sendable, Hashable {
+    public let id: String
+    public let assetID: String
+    public let assetName: String
+    public let reason: String
+
+    public init(assetID: String, assetName: String, reason: String) {
+        self.id = assetID
+        self.assetID = assetID
+        self.assetName = assetName
+        self.reason = reason
+    }
+}
+
+public struct CleanupExecutionResult: Sendable, Equatable {
+    public let deletedAssetIDs: [String]
+    public let deletedCount: Int
+    public let reclaimedBytes: Int64
+    public let failures: [CleanupExecutionFailure]
+
+    public init(
+        deletedAssetIDs: [String],
+        deletedCount: Int,
+        reclaimedBytes: Int64,
+        failures: [CleanupExecutionFailure]
+    ) {
+        self.deletedAssetIDs = deletedAssetIDs
+        self.deletedCount = deletedCount
+        self.reclaimedBytes = reclaimedBytes
+        self.failures = failures
+    }
+}
+
 public struct CompressionEstimate: Sendable {
     public let originalBytes: Int64
     public let optimizedBytes: Int64
@@ -264,6 +362,45 @@ public struct VaultRecord: Identifiable, Codable, Sendable, Hashable {
     }
 }
 
+public struct VaultConfigurationState: Codable, Sendable, Hashable {
+    public let isConfigured: Bool
+    public let biometricsEnabled: Bool
+    public let canUseBiometrics: Bool
+
+    public init(isConfigured: Bool, biometricsEnabled: Bool, canUseBiometrics: Bool) {
+        self.isConfigured = isConfigured
+        self.biometricsEnabled = biometricsEnabled
+        self.canUseBiometrics = canUseBiometrics
+    }
+}
+
+public enum VaultUnlockMethod: Sendable, Hashable {
+    case passcode(String)
+    case biometrics
+}
+
+public struct SubscriptionProduct: Identifiable, Codable, Sendable, Hashable {
+    public let id: String
+    public let plan: SubscriptionPlan
+    public let displayName: String
+    public let displayPrice: String
+    public let detailText: String
+
+    public init(
+        id: String,
+        plan: SubscriptionPlan,
+        displayName: String,
+        displayPrice: String,
+        detailText: String
+    ) {
+        self.id = id
+        self.plan = plan
+        self.displayName = displayName
+        self.displayPrice = displayPrice
+        self.detailText = detailText
+    }
+}
+
 public enum SubscriptionPlan: String, Codable, CaseIterable, Sendable {
     case annual
     case monthly
@@ -276,17 +413,36 @@ public enum SubscriptionPlan: String, Codable, CaseIterable, Sendable {
             "Monthly"
         }
     }
+
+    public var productIdentifier: String {
+        switch self {
+        case .annual:
+            "com.privadi.subscription.annual"
+        case .monthly:
+            "com.privadi.subscription.monthly"
+        }
+    }
 }
 
 public struct SubscriptionState: Sendable {
     public let isActive: Bool
     public let plan: SubscriptionPlan?
-    public let trialEndsAt: Date?
+    public let renewalDate: Date?
+    public let availableProducts: [SubscriptionProduct]
+    public let manageSubscriptionsURL: URL?
 
-    public init(isActive: Bool, plan: SubscriptionPlan?, trialEndsAt: Date?) {
+    public init(
+        isActive: Bool,
+        plan: SubscriptionPlan?,
+        renewalDate: Date?,
+        availableProducts: [SubscriptionProduct] = [],
+        manageSubscriptionsURL: URL? = nil
+    ) {
         self.isActive = isActive
         self.plan = plan
-        self.trialEndsAt = trialEndsAt
+        self.renewalDate = renewalDate
+        self.availableProducts = availableProducts
+        self.manageSubscriptionsURL = manageSubscriptionsURL
     }
 }
 

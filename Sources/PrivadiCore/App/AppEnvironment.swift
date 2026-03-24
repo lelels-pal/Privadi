@@ -9,6 +9,7 @@ public struct AppEnvironment {
     public let vaultService: VaultServiceProtocol
     public let breachCheckService: BreachCheckServiceProtocol
     public let subscriptionService: SubscriptionServiceProtocol
+    public let cleanupExecutionService: CleanupExecutionServiceProtocol
     public let metricsService: MetricsServiceProtocol
 
     public init(
@@ -20,6 +21,7 @@ public struct AppEnvironment {
         vaultService: VaultServiceProtocol,
         breachCheckService: BreachCheckServiceProtocol,
         subscriptionService: SubscriptionServiceProtocol,
+        cleanupExecutionService: CleanupExecutionServiceProtocol,
         metricsService: MetricsServiceProtocol
     ) {
         self.photoLibraryService = photoLibraryService
@@ -30,6 +32,7 @@ public struct AppEnvironment {
         self.vaultService = vaultService
         self.breachCheckService = breachCheckService
         self.subscriptionService = subscriptionService
+        self.cleanupExecutionService = cleanupExecutionService
         self.metricsService = metricsService
     }
 
@@ -44,6 +47,7 @@ public struct AppEnvironment {
             vaultService: FileVaultService(),
             breachCheckService: LocalHashBreachCheckService(),
             subscriptionService: MockSubscriptionService(),
+            cleanupExecutionService: PreviewCleanupExecutionService(),
             metricsService: AggregateMetricsService()
         )
     }
@@ -58,7 +62,8 @@ public struct AppEnvironment {
             contactsCleanupService: DeviceContactsCleanupService(),
             vaultService: FileVaultService(),
             breachCheckService: LocalHashBreachCheckService(),
-            subscriptionService: MockSubscriptionService(),
+            subscriptionService: StoreKitSubscriptionService(),
+            cleanupExecutionService: DeviceCleanupExecutionService(),
             metricsService: AggregateMetricsService()
         )
     }

@@ -16,21 +16,54 @@ public final class AppViewModel: ObservableObject {
         case limitedPreview
     }
 
+    public enum CleanupExecutionPhase: Sendable, Equatable {
+        case idle
+        case reviewing
+        case executing
+        case completed(CleanupExecutionResult)
+        case failed(String)
+    }
+
+    public enum VaultAccessState: Sendable, Equatable {
+        case unconfigured
+        case locked
+        case unlocked
+    }
+
     @Published public private(set) var stage: Stage = .privacy
     @Published public private(set) var experienceMode: ExperienceMode = .live
     @Published public private(set) var summary: DashboardSummary?
     @Published public private(set) var selection: SmartCleanSelection?
     @Published public private(set) var contactSuggestions: [ContactMergeSuggestion] = []
     @Published public private(set) var breachResult: BreachCheckResult?
-    @Published public private(set) var subscriptionState = SubscriptionState(isActive: false, plan: nil, trialEndsAt: nil)
+    @Published public private(set) var subscriptionState = SubscriptionState(isActive: false, plan: nil, renewalDate: nil)
     @Published public private(set) var compressionEstimate = CompressionEstimate(originalBytes: 0, optimizedBytes: 0)
     @Published public private(set) var vaultRecords: [VaultRecord] = []
+    @Published public private(set) var vaultConfiguration = VaultConfigurationState(isConfigured: false, biometricsEnabled: false, canUseBiometrics: false)
+    @Published public private(set) var vaultAccessState: VaultAccessState = .unconfigured
+    @Published public private(set) var cleanupCategories: [CleanupReviewCategory] = []
+    @Published public private(set) var selectedCleanupCategoryIDs: Set<String> = []
+    @Published public private(set) var cleanupReviewPlan: CleanupReviewPlan?
+    @Published public private(set) var cleanupExecutionPhase: CleanupExecutionPhase = .idle
+    @Published public private(set) var purchaseInProgress: SubscriptionPlan?
+    @Published public private(set) var restoreInProgress = false
+    @Published public private(set) var paywallStatusText: String?
     @Published public var statusText = "Ready to reclaim storage."
 
     private let environment: AppEnvironment
+    private var hasBootstrapped = false
 
     public init(environment: AppEnvironment) {
         self.environment = environment
+    }
+
+    public func bootstrap() async {
+        guard !hasBootstrapped else {
+            return
+        }
+        hasBootstrapped = true
+        refreshVaultState(preserveUnlockState: false)
+        await reloadBillingState()
     }
 
     public func continueFromPrivacy() {
@@ -39,8 +72,9 @@ public final class AppViewModel: ObservableObject {
     }
 
     public func continueFromPermissions() {
-        environment.metricsService.record(AppMetricEvent(name: "permissions_explained"))
-        stage = .paywall
+        Task {
+            await continueFromPermissionsFlow()
+        }
     }
 
     public func startLimitedPreview() {
@@ -58,13 +92,19 @@ public final class AppViewModel: ObservableObject {
 
     public func startAnnualTrial() {
         Task {
-            await activate(plan: .annual)
+            await purchase(plan: .annual)
         }
     }
 
     public func startMonthlyPlan() {
         Task {
-            await activate(plan: .monthly)
+            await purchase(plan: .monthly)
+        }
+    }
+
+    public func restorePurchases() {
+        Task {
+            await restorePurchasesFlow()
         }
     }
 
@@ -73,15 +113,145 @@ public final class AppViewModel: ObservableObject {
         environment.metricsService.record(AppMetricEvent(name: "breach_checked"))
     }
 
-    public func storeSampleInVault() {
-        do {
-            let payload = VaultPayload(itemType: .contact, rawData: Data("Privadi keeps this offline.".utf8))
-            _ = try environment.vaultService.store(payload, passcode: "1234")
-            vaultRecords = environment.vaultService.listRecords()
-            environment.metricsService.record(AppMetricEvent(name: "vault_item_saved"))
-        } catch {
-            statusText = "Unable to store the sample item in the vault."
+    public func configureVault(passcode: String, enableBiometrics: Bool) {
+        let trimmed = passcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 4 else {
+            statusText = "Use a vault passcode with at least four characters."
+            return
         }
+
+        do {
+            vaultConfiguration = try environment.vaultService.configure(passcode: trimmed, enableBiometrics: enableBiometrics)
+            vaultAccessState = .unlocked
+            _ = try environment.vaultService.store(sampleVaultPayload())
+            refreshVaultState(preserveUnlockState: true)
+            environment.metricsService.record(AppMetricEvent(name: "vault_item_saved"))
+            statusText = vaultConfiguration.biometricsEnabled
+                ? "Vault configured and the sample item is now protected with passcode and biometrics."
+                : "Vault configured and the sample item is now protected with your passcode."
+        } catch {
+            statusText = error.localizedDescription
+        }
+    }
+
+    public func saveSampleToConfiguredVault() {
+        do {
+            guard vaultConfiguration.isConfigured else {
+                statusText = "Set up the vault before saving private items."
+                return
+            }
+            _ = try environment.vaultService.store(sampleVaultPayload())
+            vaultAccessState = .unlocked
+            refreshVaultState(preserveUnlockState: true)
+            environment.metricsService.record(AppMetricEvent(name: "vault_item_saved"))
+            statusText = "Another sample item was saved to your encrypted vault."
+        } catch VaultServiceError.notConfigured {
+            vaultAccessState = .locked
+            statusText = "Unlock your vault before saving more private items."
+        } catch {
+            statusText = error.localizedDescription
+        }
+    }
+
+    public func unlockVault(passcode: String) async {
+        let trimmed = passcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            statusText = "Enter your vault passcode to unlock the encrypted items."
+            return
+        }
+
+        do {
+            try await environment.vaultService.unlockVault(method: .passcode(trimmed))
+            vaultAccessState = .unlocked
+            refreshVaultState(preserveUnlockState: true)
+            statusText = "Vault unlocked. You can save protected items again."
+        } catch {
+            vaultAccessState = .locked
+            statusText = error.localizedDescription
+        }
+    }
+
+    public func unlockVaultWithBiometrics() async {
+        do {
+            try await environment.vaultService.unlockVault(method: .biometrics)
+            vaultAccessState = .unlocked
+            refreshVaultState(preserveUnlockState: true)
+            statusText = "Vault unlocked with biometrics."
+        } catch {
+            vaultAccessState = .locked
+            statusText = error.localizedDescription
+        }
+    }
+
+    public func toggleCleanupCategory(_ id: String) {
+        guard cleanupCategories.contains(where: { $0.id == id && $0.isSelectable }) else {
+            return
+        }
+
+        if selectedCleanupCategoryIDs.contains(id) {
+            selectedCleanupCategoryIDs.remove(id)
+        } else {
+            selectedCleanupCategoryIDs.insert(id)
+        }
+    }
+
+    public func reviewCleanupPlan() {
+        guard experienceMode == .live else {
+            statusText = "Preview prepared offline. Start a plan when you want the full-library version on your own device."
+            return
+        }
+
+        let selectedCategories = cleanupCategories.filter { selectedCleanupCategoryIDs.contains($0.id) }
+        let deleteCandidates = deduplicatedAssets(
+            from: selectedCategories
+                .filter(\.isDestructive)
+                .flatMap(\.eligibleAssets)
+        )
+
+        guard !deleteCandidates.isEmpty else {
+            statusText = "Your selected categories are review-only for now. Choose media delete items to continue."
+            return
+        }
+
+        let reclaimableBytes = deleteCandidates.reduce(Int64.zero) { $0 + $1.byteSize }
+        cleanupReviewPlan = CleanupReviewPlan(
+            categories: selectedCategories,
+            selectedCategoryIDs: selectedCleanupCategoryIDs,
+            deleteCandidates: deleteCandidates,
+            estimatedReclaimableBytes: reclaimableBytes
+        )
+        cleanupExecutionPhase = .reviewing
+        statusText = "Review the exact delete candidates before anything is removed."
+    }
+
+    public func dismissCleanupReview() {
+        cleanupReviewPlan = nil
+        if case .executing = cleanupExecutionPhase {
+            return
+        }
+        cleanupExecutionPhase = .idle
+    }
+
+    public func executeCleanupPlan() {
+        Task {
+            await executeCleanupPlanFlow()
+        }
+    }
+
+    public func selectedReclaimableBytes() -> Int64 {
+        cleanupCategories
+            .filter { selectedCleanupCategoryIDs.contains($0.id) }
+            .reduce(into: Int64.zero) { partialResult, category in
+                partialResult += category.estimatedBytes
+            }
+    }
+
+    public func product(for plan: SubscriptionPlan) -> SubscriptionProduct? {
+        subscriptionState.availableProducts.first { $0.plan == plan }
+    }
+
+    public func isProductActionDisabled(_ plan: SubscriptionPlan) -> Bool {
+        purchaseInProgress != nil || restoreInProgress || product(for: plan) == nil
     }
 
     func startLimitedPreviewFlow(returnStage: Stage = .permissions) async {
@@ -97,19 +267,115 @@ public final class AppViewModel: ObservableObject {
         }
     }
 
-    private func activate(plan: SubscriptionPlan) async {
-        let returnStage = stage
+    private func continueFromPermissionsFlow() async {
+        environment.metricsService.record(AppMetricEvent(name: "permissions_explained"))
+        await reloadBillingState()
+
+        if subscriptionState.isActive {
+            await loadSubscribedDashboard()
+        } else {
+            stage = .paywall
+        }
+    }
+
+    private func purchase(plan: SubscriptionPlan) async {
+        purchaseInProgress = plan
+        paywallStatusText = nil
+
+        do {
+            subscriptionState = try await environment.subscriptionService.purchase(plan: plan)
+            environment.metricsService.record(AppMetricEvent(name: "subscription_purchased_\(plan.rawValue)"))
+            purchaseInProgress = nil
+            await loadSubscribedDashboard()
+        } catch {
+            purchaseInProgress = nil
+            paywallStatusText = error.localizedDescription
+            stage = .paywall
+        }
+    }
+
+    private func restorePurchasesFlow() async {
+        restoreInProgress = true
+        paywallStatusText = nil
+
+        do {
+            subscriptionState = try await environment.subscriptionService.restorePurchases()
+            restoreInProgress = false
+            if subscriptionState.isActive {
+                environment.metricsService.record(AppMetricEvent(name: "subscription_restored"))
+                await loadSubscribedDashboard()
+            } else {
+                paywallStatusText = "No active subscription was restored for this Apple ID."
+            }
+        } catch {
+            restoreInProgress = false
+            paywallStatusText = error.localizedDescription
+        }
+    }
+
+    private func reloadBillingState() async {
+        do {
+            _ = try await environment.subscriptionService.loadProducts()
+            subscriptionState = await environment.subscriptionService.refreshEntitlements()
+            paywallStatusText = nil
+        } catch {
+            subscriptionState = await environment.subscriptionService.refreshEntitlements()
+            paywallStatusText = error.localizedDescription
+        }
+    }
+
+    private func loadSubscribedDashboard() async {
         stage = .scanning
         statusText = "Preparing your private cleanup plan."
         experienceMode = .live
-        environment.metricsService.record(AppMetricEvent(name: "trial_started"))
-        subscriptionState = await environment.subscriptionService.startTrial(plan: plan)
 
         do {
             try await loadDashboard(as: .live, scope: .fullLibrary)
         } catch {
             statusText = liveScanErrorMessage(for: error)
-            stage = returnStage
+            stage = .permissions
+        }
+    }
+
+    private func executeCleanupPlanFlow() async {
+        guard let reviewPlan = cleanupReviewPlan else {
+            return
+        }
+
+        cleanupExecutionPhase = .executing
+        statusText = "Deleting the selected items from your photo library."
+
+        do {
+            let result = try await environment.cleanupExecutionService.executeDelete(for: reviewPlan.deleteCandidates)
+            cleanupReviewPlan = nil
+            cleanupExecutionPhase = .completed(result)
+            environment.metricsService.record(AppMetricEvent(name: "cleanup_executed"))
+
+            let scope: ScanScope = experienceMode == .live ? .fullLibrary : .preview
+            var didFailRefresh = false
+            do {
+                try await loadDashboard(as: experienceMode, scope: scope)
+            } catch {
+                didFailRefresh = true
+                handlePostCleanupRefreshFailure(error, result: result, experienceMode: experienceMode)
+            }
+
+            if didFailRefresh {
+                return
+            }
+
+            if result.failures.isEmpty {
+                if case .completed = cleanupExecutionPhase {
+                    statusText = "Deleted \(result.deletedCount) items and reclaimed \(result.reclaimedBytes.privadiByteString)."
+                }
+            } else {
+                if case .completed = cleanupExecutionPhase {
+                    statusText = "Deleted \(result.deletedCount) items, but \(result.failures.count) item(s) could not be removed."
+                }
+            }
+        } catch {
+            cleanupExecutionPhase = .failed(error.localizedDescription)
+            statusText = "Privadi could not complete the cleanup. Please try again."
         }
     }
 
@@ -133,10 +399,23 @@ public final class AppViewModel: ObservableObject {
         self.selection = selection
         self.compressionEstimate = compressionEstimate
         self.contactSuggestions = mergeSuggestions
-        self.vaultRecords = environment.vaultService.listRecords()
+        refreshVaultState(preserveUnlockState: true)
+        self.cleanupCategories = buildCleanupCategories(
+            analysis: analysis,
+            selection: selection,
+            compressionEstimate: compressionEstimate,
+            contactSuggestionCount: mergeSuggestions.count,
+            experienceMode: experienceMode
+        )
+        syncSelectedCleanupCategoryIDs()
+
+        let deleteBytes = cleanupCategories
+            .first(where: { $0.kind == .mediaDelete })?
+            .estimatedBytes ?? selection.estimatedReclaimableBytes
+
         self.summary = DashboardSummary(
             totalItems: analysis.assets.count,
-            reclaimableBytes: selection.estimatedReclaimableBytes + compressionEstimate.savingsBytes,
+            reclaimableBytes: deleteBytes,
             duplicateGroupCount: analysis.duplicateGroups.count,
             similarGroupCount: analysis.similarGroups.count,
             lowQualityCount: analysis.lowQualityAssets.count,
@@ -155,6 +434,177 @@ public final class AppViewModel: ObservableObject {
         stage = .dashboard
     }
 
+    private func refreshVaultState(preserveUnlockState: Bool) {
+        vaultConfiguration = environment.vaultService.configurationState()
+        vaultRecords = environment.vaultService.listRecords()
+
+        if !vaultConfiguration.isConfigured {
+            vaultAccessState = .unconfigured
+        } else if preserveUnlockState, vaultAccessState == .unlocked {
+            vaultAccessState = .unlocked
+        } else {
+            vaultAccessState = .locked
+        }
+    }
+
+    private func handlePostCleanupRefreshFailure(
+        _ error: Error,
+        result: CleanupExecutionResult,
+        experienceMode: ExperienceMode
+    ) {
+        if let accessError = error as? DeviceDataAccessError {
+            switch accessError {
+            case .emptyPhotoLibrary, .emptyPreviewLibrary:
+                applyEmptyDashboardState(for: experienceMode)
+            case .photoAccessRequired, .unavailableOnCurrentPlatform:
+                break
+            }
+        }
+
+        cleanupExecutionPhase = .completed(result)
+        if result.failures.isEmpty {
+            statusText = "Cleanup finished and reclaimed \(result.reclaimedBytes.privadiByteString), but Privadi could not refresh the library."
+        } else {
+            statusText = "Cleanup finished, but Privadi could not refresh the library after removing \(result.deletedCount) items."
+        }
+    }
+
+    private func applyEmptyDashboardState(for experienceMode: ExperienceMode) {
+        let selection = SmartCleanSelection(
+            autoSelectedAssets: [],
+            reviewSimilarGroups: [],
+            estimatedReclaimableBytes: 0
+        )
+        let analysis = LibraryAnalysis(
+            assets: [],
+            duplicateGroups: [],
+            similarGroups: [],
+            lowQualityAssets: [],
+            screenshots: [],
+            sloMoAssets: [],
+            largeVideoAssets: []
+        )
+        let compressionEstimate = CompressionEstimate(originalBytes: 0, optimizedBytes: 0)
+
+        self.experienceMode = experienceMode
+        self.selection = selection
+        self.compressionEstimate = compressionEstimate
+        refreshVaultState(preserveUnlockState: true)
+        self.cleanupCategories = buildCleanupCategories(
+            analysis: analysis,
+            selection: selection,
+            compressionEstimate: compressionEstimate,
+            contactSuggestionCount: contactSuggestions.count,
+            experienceMode: experienceMode
+        )
+        syncSelectedCleanupCategoryIDs()
+        self.summary = DashboardSummary(
+            totalItems: 0,
+            reclaimableBytes: 0,
+            duplicateGroupCount: 0,
+            similarGroupCount: 0,
+            lowQualityCount: 0,
+            largeVideoCount: 0,
+            screenshotCount: 0,
+            sloMoCount: 0,
+            contactSuggestionCount: contactSuggestions.count,
+            vaultItemCount: vaultRecords.count
+        )
+        stage = .dashboard
+    }
+
+    private func buildCleanupCategories(
+        analysis: LibraryAnalysis,
+        selection: SmartCleanSelection,
+        compressionEstimate: CompressionEstimate,
+        contactSuggestionCount: Int,
+        experienceMode: ExperienceMode
+    ) -> [CleanupReviewCategory] {
+        var categories = [
+            CleanupReviewCategory(
+                id: "media",
+                kind: .mediaDelete,
+                title: "Delete Candidates",
+                metric: selection.estimatedReclaimableBytes.privadiByteString,
+                subtitle: "\(selection.autoSelectedAssets.count) exact-duplicate or low-risk items ready for review",
+                icon: "trash.fill",
+                detailLines: [
+                    "\(analysis.duplicateGroups.count) duplicate groups",
+                    "\(analysis.similarGroups.count) similar groups stay review-only",
+                    "\(analysis.lowQualityAssets.count) low-quality picks",
+                ],
+                estimatedBytes: selection.estimatedReclaimableBytes,
+                eligibleAssets: selection.autoSelectedAssets,
+                isDestructive: true,
+                isSelectable: true
+            ),
+            CleanupReviewCategory(
+                id: "compression",
+                kind: .compressionReview,
+                title: "Compression Center",
+                metric: max(compressionEstimate.savingsBytes, 0).privadiByteString,
+                subtitle: "Large media that can be reduced locally in a later release",
+                icon: "video.fill",
+                detailLines: [
+                    "\(analysis.largeVideoAssets.count) large videos",
+                    "\(analysis.screenshots.count) screenshots",
+                    "\(analysis.sloMoAssets.count) slo-mo clips",
+                ],
+                estimatedBytes: 0,
+                eligibleAssets: [],
+                isDestructive: false,
+                isSelectable: true
+            ),
+        ]
+
+        if experienceMode == .live {
+            categories.append(
+                CleanupReviewCategory(
+                    id: "contacts",
+                    kind: .contactReview,
+                    title: "Contact Hygiene",
+                    metric: "\(contactSuggestionCount) fixes",
+                    subtitle: "Duplicate and incomplete entries stay review-only",
+                    icon: "person.crop.circle.badge.checkmark",
+                    detailLines: [
+                        "Review-first merge suggestions",
+                        "No cloud contact matching",
+                        "Pairs with the secure local vault",
+                    ],
+                    estimatedBytes: 0,
+                    eligibleAssets: [],
+                    isDestructive: false,
+                    isSelectable: true
+                )
+            )
+        }
+
+        return categories
+    }
+
+    private func syncSelectedCleanupCategoryIDs() {
+        let selectableIDs = Set(cleanupCategories.filter(\.isSelectable).map(\.id))
+        if selectedCleanupCategoryIDs.isEmpty {
+            selectedCleanupCategoryIDs = selectableIDs
+        } else {
+            selectedCleanupCategoryIDs = selectedCleanupCategoryIDs.intersection(selectableIDs)
+            if selectedCleanupCategoryIDs.isEmpty {
+                selectedCleanupCategoryIDs = selectableIDs
+            }
+        }
+    }
+
+    private func deduplicatedAssets(from assets: [MediaAsset]) -> [MediaAsset] {
+        var seen = Set<String>()
+        return assets.filter { asset in
+            seen.insert(asset.id).inserted
+        }
+    }
+
+    private func sampleVaultPayload() -> VaultPayload {
+        VaultPayload(itemType: .contact, rawData: Data("Privadi keeps this offline.".utf8))
+    }
+
     private func statusText(
         for experienceMode: ExperienceMode,
         assetCount: Int,
@@ -167,7 +617,7 @@ public final class AppViewModel: ObservableObject {
             if accessLevel == .limited {
                 return "Scan complete for the photos you shared with Privadi. Expand Photos access when you want a full-library review."
             }
-            return "Instant scan complete. Potential reclaimable space is ready."
+            return "Instant scan complete. Exact-duplicate delete candidates are ready for review."
         }
     }
 

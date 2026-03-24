@@ -29,8 +29,11 @@ public protocol ContactsCleanupServiceProtocol {
 
 @MainActor
 public protocol VaultServiceProtocol {
-    func store(_ payload: VaultPayload, passcode: String) throws -> VaultRecord
-    func unlock(_ record: VaultRecord, passcode: String) throws -> VaultPayload
+    func configurationState() -> VaultConfigurationState
+    func configure(passcode: String, enableBiometrics: Bool) throws -> VaultConfigurationState
+    func store(_ payload: VaultPayload) throws -> VaultRecord
+    func unlockVault(method: VaultUnlockMethod) async throws
+    func unlock(_ record: VaultRecord, method: VaultUnlockMethod) async throws -> VaultPayload
     func listRecords() -> [VaultRecord]
 }
 
@@ -42,7 +45,15 @@ public protocol BreachCheckServiceProtocol {
 @MainActor
 public protocol SubscriptionServiceProtocol {
     func currentState() async -> SubscriptionState
-    func startTrial(plan: SubscriptionPlan) async -> SubscriptionState
+    func refreshEntitlements() async -> SubscriptionState
+    func loadProducts() async throws -> [SubscriptionProduct]
+    func purchase(plan: SubscriptionPlan) async throws -> SubscriptionState
+    func restorePurchases() async throws -> SubscriptionState
+}
+
+@MainActor
+public protocol CleanupExecutionServiceProtocol {
+    func executeDelete(for assets: [MediaAsset]) async throws -> CleanupExecutionResult
 }
 
 @MainActor
