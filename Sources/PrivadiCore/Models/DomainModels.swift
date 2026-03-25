@@ -458,6 +458,20 @@ public struct BreachCheckResult: Sendable, Hashable {
     }
 }
 
+public struct BreachDatasetMetadata: Codable, Sendable, Hashable {
+    public let version: String
+    public let generatedAt: String
+    public let entryCount: Int
+    public let sourceDescription: String
+
+    public init(version: String, generatedAt: String, entryCount: Int, sourceDescription: String) {
+        self.version = version
+        self.generatedAt = generatedAt
+        self.entryCount = entryCount
+        self.sourceDescription = sourceDescription
+    }
+}
+
 public struct AppMetricEvent: Sendable, Hashable {
     public let name: String
     public let recordedAt: Date

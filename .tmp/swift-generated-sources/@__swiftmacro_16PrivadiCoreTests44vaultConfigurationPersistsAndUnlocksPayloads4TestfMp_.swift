@@ -9,7 +9,7 @@
   named: "vaultConfigurationPersistsAndUnlocksPayloads()",
   in: nil,
   xcTestCompatibleSelector: nil,
-  traits: [],sourceLocation: Testing.SourceLocation(fileID: "PrivadiCoreTests/PrivadiCoreTests.swift", filePath: "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift", line: 33, column: 2),
+  traits: [],sourceLocation: Testing.SourceLocation(fileID: "PrivadiCoreTests/PrivadiCoreTests.swift", filePath: "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift", line: 110, column: 2),
   parameters: [],
   testFunction: $s16PrivadiCoreTests44vaultConfigurationPersistsAndUnlocksPayloads4TestfMp_17Z4230e2983a184800fMu_
 )
@@ -36,4 +36,4 @@ enum $s16PrivadiCoreTests44vaultConfigurationPersistsAndUnlocksPayloads4TestfMp_
   }
 }
 
-// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:53:2-53:2
+// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:130:2-130:2

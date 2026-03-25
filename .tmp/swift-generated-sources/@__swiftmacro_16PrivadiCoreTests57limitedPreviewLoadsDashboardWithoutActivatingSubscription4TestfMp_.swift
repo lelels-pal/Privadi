@@ -9,7 +9,7 @@
   named: "limitedPreviewLoadsDashboardWithoutActivatingSubscription()",
   in: nil,
   xcTestCompatibleSelector: nil,
-  traits: [],sourceLocation: Testing.SourceLocation(fileID: "PrivadiCoreTests/PrivadiCoreTests.swift", filePath: "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift", line: 56, column: 2),
+  traits: [],sourceLocation: Testing.SourceLocation(fileID: "PrivadiCoreTests/PrivadiCoreTests.swift", filePath: "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift", line: 167, column: 2),
   parameters: [],
   testFunction: $s16PrivadiCoreTests57limitedPreviewLoadsDashboardWithoutActivatingSubscription4TestfMp_17Z698863cb85d9073efMu_
 )
@@ -36,4 +36,4 @@ enum $s16PrivadiCoreTests57limitedPreviewLoadsDashboardWithoutActivatingSubscrip
   }
 }
 
-// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:66:2-66:2
+// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:177:2-177:2

@@ -31,6 +31,96 @@ func breachCheckMatchesLocalHashIndex() {
 
 @MainActor
 @Test
+func bundledBreachSnapshotIncludesProductionMetadata() {
+    let service = LocalHashBreachCheckService()
+    let metadata = service.datasetMetadata()
+
+    #expect(metadata.version == "2026.03-offline-snapshot")
+    #expect(metadata.entryCount >= 20_000)
+    #expect(metadata.generatedAt == "2026-03-25")
+}
+
+@MainActor
+@Test
+func bundledBreachSnapshotMatchesKnownSeedAddress() {
+    let service = LocalHashBreachCheckService()
+
+    #expect(service.check(email: "compromised@example.com").isBreached)
+    #expect(!service.check(email: "clean@example.com").isBreached)
+}
+
+@MainActor
+@Test
+func breachSnapshotIgnoresMalformedRows() {
+    let service = LocalHashBreachCheckService(
+        contents: """
+        not-a-hash
+        0bb1a6de76c5af97d45ca3d5e4af75b3f8bb32b20f550ebb293af06e0929bdc6
+        abc123
+
+        """,
+        metadata: BreachDatasetMetadata(
+            version: "test",
+            generatedAt: "2026-03-25",
+            entryCount: 99,
+            sourceDescription: "Unit test"
+        )
+    )
+
+    #expect(service.datasetMetadata().entryCount == 1)
+    #expect(service.check(email: "compromised@example.com").isBreached)
+}
+
+@MainActor
+@Test
+func mediaFingerprintCachePersistsAcrossServiceRelaunch() async throws {
+    let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let firstService = FileBackedMediaFingerprintingService(directoryURL: tempDir)
+
+    await firstService.storeFingerprint("fingerprint-a", for: "asset-a")
+
+    let secondService = FileBackedMediaFingerprintingService(directoryURL: tempDir)
+    let cached = await secondService.cachedFingerprint(for: "asset-a")
+
+    #expect(cached == "fingerprint-a")
+}
+
+@MainActor
+@Test
+func liveDashboardSummaryCountsDuplicateGroupsWhenChecksumsExist() async {
+    let environment = makeEnvironment(
+        photoLibraryService: ScriptedPhotoLibraryService(
+            fullLibraryResponses: [.success(SampleData.mediaAssets)]
+        ),
+        subscriptionService: FakeSubscriptionService(activePlan: .annual)
+    )
+    let viewModel = AppViewModel(environment: environment)
+
+    await viewModel.bootstrap()
+    viewModel.continueFromPrivacy()
+    viewModel.continueFromPermissions()
+    await settleAsyncFlow()
+
+    #expect(viewModel.stage == .dashboard)
+    #expect(viewModel.summary?.duplicateGroupCount == 1)
+    #expect(viewModel.summary?.reclaimableBytes == viewModel.selection?.estimatedReclaimableBytes)
+}
+
+@MainActor
+@Test
+func limitedPreviewPopulatesCleanupCategoriesAndStatusText() async {
+    let viewModel = AppViewModel(environment: .livePreview())
+
+    await viewModel.startLimitedPreviewFlow()
+
+    #expect(viewModel.stage == .dashboard)
+    #expect(viewModel.cleanupCategories.count == 2)
+    #expect(viewModel.statusText.contains("Limited preview ready"))
+    #expect(viewModel.summary?.totalItems == min(30, SampleData.mediaAssets.count))
+}
+
+@MainActor
+@Test
 func vaultConfigurationPersistsAndUnlocksPayloads() async throws {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let keychainService = "com.privadi.tests.\(UUID().uuidString)"
@@ -294,12 +384,47 @@ func cleanupDeletionOfLastItemsBuildsEmptyDashboardState() async {
     #expect(viewModel.statusText.contains("could not refresh the library"))
 }
 
+@Test
+func scanPipelineRunsFromDetachedTaskWithoutMainActorIsolation() async throws {
+    let photoLibraryService = ScriptedPhotoLibraryService(
+        fullLibraryResponses: [.success(SampleData.mediaAssets)],
+        accessLevel: .limited
+    )
+
+    let result = try await Task.detached(priority: .userInitiated) {
+        let assets = try await photoLibraryService.loadAssets(scope: .fullLibrary)
+        let contacts = try await ContactsCleanupService().loadContacts(scope: .fullLibrary)
+        let analysis = await HeuristicMediaAnalysisEngine().analyze(assets: assets)
+        let selection = SmartCleanPolicy().selection(for: analysis)
+        let compression = await CompressionEngine().estimateSavings(for: selection.autoSelectedAssets)
+        let suggestions = ContactsCleanupService().mergeSuggestions(from: contacts)
+        let accessLevel = photoLibraryService.currentAccessLevel()
+
+        return (
+            assets.count,
+            analysis.duplicateGroups.count,
+            selection.autoSelectedAssets.count,
+            compression.savingsBytes,
+            suggestions.count,
+            accessLevel
+        )
+    }.value
+
+    #expect(result.0 == SampleData.mediaAssets.count)
+    #expect(result.1 == 1)
+    #expect(result.2 > 0)
+    #expect(result.3 >= 0)
+    #expect(result.4 > 0)
+    #expect(result.5 == .limited)
+}
+
 @MainActor
 private func makeEnvironment(
     photoLibraryService: PhotoLibraryServiceProtocol = DemoPhotoLibraryService(),
     subscriptionService: SubscriptionServiceProtocol = FakeSubscriptionService(activePlan: nil),
     cleanupExecutionService: CleanupExecutionServiceProtocol = PreviewCleanupExecutionService(),
-    vaultService: VaultServiceProtocol? = nil
+    vaultService: VaultServiceProtocol? = nil,
+    mediaFingerprintingService: MediaFingerprintingServiceProtocol = InMemoryMediaFingerprintingService()
 ) -> AppEnvironment {
     let resolvedVaultService: VaultServiceProtocol
     if let vaultService {
@@ -312,6 +437,7 @@ private func makeEnvironment(
 
     return AppEnvironment(
         photoLibraryService: photoLibraryService,
+        mediaFingerprintingService: mediaFingerprintingService,
         mediaAnalysisEngine: HeuristicMediaAnalysisEngine(),
         smartCleanPolicy: SmartCleanPolicy(),
         compressionEngine: CompressionEngine(),
@@ -325,7 +451,10 @@ private func makeEnvironment(
 }
 
 private func settleAsyncFlow() async {
-    try? await Task.sleep(for: .milliseconds(120))
+    for _ in 0..<20 {
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(100))
+    }
 }
 
 @MainActor
@@ -381,13 +510,13 @@ private final class FakeSubscriptionService: SubscriptionServiceProtocol {
     }
 }
 
-@MainActor
-private final class ScriptedPhotoLibraryService: PhotoLibraryServiceProtocol {
+private final class ScriptedPhotoLibraryService: PhotoLibraryServiceProtocol, @unchecked Sendable {
     enum Response {
         case success([MediaAsset])
         case failure(DeviceDataAccessError)
     }
 
+    private let lock = NSLock()
     private var previewResponses: [Response]
     private var fullLibraryResponses: [Response]
     private let accessLevel: PhotoLibraryAccessLevel
@@ -416,7 +545,9 @@ private final class ScriptedPhotoLibraryService: PhotoLibraryServiceProtocol {
     }
 
     private func nextResponse(from responses: inout [Response]) throws -> [MediaAsset] {
+        lock.lock()
         let response = responses.isEmpty ? .success([]) : responses.removeFirst()
+        lock.unlock()
         switch response {
         case .success(let assets):
             return assets

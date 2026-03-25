@@ -5,7 +5,7 @@
       "project_root": "/Volumes/SSD_Mac/Universal Projects/privadi",
       "project_label": "privadi",
       "created_at": "2026-03-24T00:15:57+00:00",
-      "updated_at": "2026-03-24T08:43:13+00:00",
+      "updated_at": "2026-03-25T15:29:46+00:00",
       "findings": [
         {
           "id": "P0",
@@ -98,21 +98,26 @@
           "severity": "P1",
           "title": "Duplicate detection is disabled on live device assets",
           "details": "The live asset mapper always sets checksum to nil, while duplicate detection groups only assets with non-nil checksums.",
-          "status": "open",
+          "status": "resolved",
           "refs": [
             "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/DeviceServices.swift#L94",
             "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/OfflineServices.swift#L23"
           ],
           "source": "2026-03-24 release-readiness review",
           "created_at": "2026-03-24T00:15:57+00:00",
-          "updated_at": "2026-03-24T00:15:57+00:00",
-          "resolved_at": null,
-          "resolution_note": null,
+          "updated_at": "2026-03-25T14:51:45+00:00",
+          "resolved_at": "2026-03-25T14:51:45+00:00",
+          "resolution_note": "Implemented on-device live-asset fingerprint caching so DevicePhotoLibraryService now populates exact duplicate checksums for live scans, preserving local-only analysis and restoring duplicate groups on the dashboard.",
           "history": [
             {
               "at": "2026-03-24T00:15:57+00:00",
               "action": "imported",
               "note": null
+            },
+            {
+              "at": "2026-03-25T14:51:45+00:00",
+              "action": "resolved",
+              "note": "Implemented on-device live-asset fingerprint caching so DevicePhotoLibraryService now populates exact duplicate checksums for live scans, preserving local-only analysis and restoring duplicate groups on the dashboard."
             }
           ]
         },
@@ -149,21 +154,26 @@
           "severity": "P1",
           "title": "Breach-check dataset is demo-sized",
           "details": "The local breach index bundled in the app has only three hashes, so the feature is not production-credible yet.",
-          "status": "open",
+          "status": "resolved",
           "refs": [
             "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/App/AppEnvironment.swift#L60",
             "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Resources/breach_hashes.txt#L1"
           ],
           "source": "2026-03-24 release-readiness review",
           "created_at": "2026-03-24T00:15:57+00:00",
-          "updated_at": "2026-03-24T00:15:57+00:00",
-          "resolved_at": null,
-          "resolution_note": null,
+          "updated_at": "2026-03-25T14:51:46+00:00",
+          "resolved_at": "2026-03-25T14:51:46+00:00",
+          "resolution_note": "Replaced the three-line demo breach bundle with a versioned offline snapshot and metadata, added deterministic generation tooling, and hardened hash parsing plus metadata exposure for validation.",
           "history": [
             {
               "at": "2026-03-24T00:15:57+00:00",
               "action": "imported",
               "note": null
+            },
+            {
+              "at": "2026-03-25T14:51:46+00:00",
+              "action": "resolved",
+              "note": "Replaced the three-line demo breach bundle with a versioned offline snapshot and metadata, added deterministic generation tooling, and hardened hash parsing plus metadata exposure for validation."
             }
           ]
         },
@@ -172,21 +182,26 @@
           "severity": "P1",
           "title": "Release validation coverage is too thin",
           "details": "The repo has only four unit tests and no iOS UI, device, purchase, or permission-flow coverage.",
-          "status": "open",
+          "status": "resolved",
           "refs": [
             "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift#L1",
             "/Volumes/SSD_Mac/Universal Projects/privadi/scripts/test.sh#L1"
           ],
           "source": "2026-03-24 release-readiness review",
           "created_at": "2026-03-24T00:15:57+00:00",
-          "updated_at": "2026-03-24T00:15:57+00:00",
-          "resolved_at": null,
-          "resolution_note": null,
+          "updated_at": "2026-03-25T14:51:46+00:00",
+          "resolved_at": "2026-03-25T14:51:46+00:00",
+          "resolution_note": "Expanded targeted validation with fingerprint-cache tests, breach snapshot tests, dashboard duplicate-count regression coverage, and a repo-local manual smoke matrix tied to scripts/build.sh and scripts/test.sh.",
           "history": [
             {
               "at": "2026-03-24T00:15:57+00:00",
               "action": "imported",
               "note": null
+            },
+            {
+              "at": "2026-03-25T14:51:46+00:00",
+              "action": "resolved",
+              "note": "Expanded targeted validation with fingerprint-cache tests, breach snapshot tests, dashboard duplicate-count regression coverage, and a repo-local manual smoke matrix tied to scripts/build.sh and scripts/test.sh."
             }
           ]
         },
@@ -195,21 +210,26 @@
           "severity": "P2",
           "title": "Heavy scan work is main-actor bound",
           "details": "The service protocols are MainActor-isolated and the live photo scan enumerates the full library on that path, which risks UI stalls on large libraries.",
-          "status": "open",
+          "status": "resolved",
           "refs": [
             "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/ServiceProtocols.swift#L3",
             "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/DeviceServices.swift#L41"
           ],
           "source": "2026-03-24 release-readiness review",
           "created_at": "2026-03-24T00:15:57+00:00",
-          "updated_at": "2026-03-24T00:15:57+00:00",
-          "resolved_at": null,
-          "resolution_note": null,
+          "updated_at": "2026-03-25T15:21:54+00:00",
+          "resolved_at": "2026-03-25T15:21:54+00:00",
+          "resolution_note": "Removed main-actor isolation from the scan pipeline protocols, moved dashboard scan orchestration into a detached sendable payload path, kept AppViewModel UI mutations on the main actor, and added regression coverage for detached scan execution before verifying with swift test.",
           "history": [
             {
               "at": "2026-03-24T00:15:57+00:00",
               "action": "imported",
               "note": null
+            },
+            {
+              "at": "2026-03-25T15:21:54+00:00",
+              "action": "resolved",
+              "note": "Removed main-actor isolation from the scan pipeline protocols, moved dashboard scan orchestration into a detached sendable payload path, kept AppViewModel UI mutations on the main actor, and added regression coverage for detached scan execution before verifying with swift test."
             }
           ]
         },
@@ -291,6 +311,83 @@
               "at": "2026-03-24T08:43:13+00:00",
               "action": "resolved",
               "note": "Separated cleanup execution success from post-delete refresh success, preserved completed cleanup results on refresh errors including empty-library cases, and added regression tests."
+            }
+          ]
+        },
+        {
+          "id": "R-2026-03-25-1",
+          "severity": "P1",
+          "title": "Duplicate fingerprint changes when filenames differ",
+          "details": "The exact-duplicate fingerprint included PHAssetResource.originalFilename, so two assets with identical bytes but different exported or downloaded filenames would hash differently and never be grouped as duplicates.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/DeviceServices.swift#L169"
+          ],
+          "source": "2026-03-25 uncommitted code review",
+          "created_at": "2026-03-25T15:07:34+00:00",
+          "updated_at": "2026-03-25T15:07:41+00:00",
+          "resolved_at": "2026-03-25T15:07:41+00:00",
+          "resolution_note": "Removed originalFilename from the live asset fingerprint so exact-duplicate grouping now depends on stable resource content rather than mutable export names, then verified with swift test.",
+          "history": [
+            {
+              "at": "2026-03-25T15:07:34+00:00",
+              "action": "created",
+              "note": null
+            },
+            {
+              "at": "2026-03-25T15:07:41+00:00",
+              "action": "resolved",
+              "note": "Removed originalFilename from the live asset fingerprint so exact-duplicate grouping now depends on stable resource content rather than mutable export names, then verified with swift test."
+            }
+          ]
+        },
+        {
+          "id": "R-2026-03-25-2",
+          "severity": "P1",
+          "title": "iCloud-only assets cannot be fingerprinted",
+          "details": "The fingerprinting path requested PHAssetResource data with network access disabled, so assets optimized into iCloud returned nil checksums and were excluded from exact-duplicate grouping on devices using Optimize Storage.",
+          "status": "resolved",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Services/DeviceServices.swift#L188"
+          ],
+          "source": "2026-03-25 uncommitted code review",
+          "created_at": "2026-03-25T15:07:34+00:00",
+          "updated_at": "2026-03-25T15:07:41+00:00",
+          "resolved_at": "2026-03-25T15:07:41+00:00",
+          "resolution_note": "Enabled network-backed PHAssetResource reads during fingerprint generation so iCloud-only assets can be hashed for duplicate detection, then verified with swift test.",
+          "history": [
+            {
+              "at": "2026-03-25T15:07:34+00:00",
+              "action": "created",
+              "note": null
+            },
+            {
+              "at": "2026-03-25T15:07:41+00:00",
+              "action": "resolved",
+              "note": "Enabled network-backed PHAssetResource reads during fingerprint generation so iCloud-only assets can be hashed for duplicate detection, then verified with swift test."
+            }
+          ]
+        },
+        {
+          "id": "R-2026-03-25-3",
+          "severity": "P1",
+          "title": "Pre-paywall QA mode and device validation are still pending",
+          "details": "Before re-enabling monetization, the app should expose a pre-paywall QA path that uses the real live services while bypassing the subscription gate, then run a full on-device smoke pass covering permissions, scan, duplicate detection, cleanup execution, contacts, vault relaunch/unlock, breach check, and failure states. Without that pass, core product validation is still incomplete even though the current code-level blockers are resolved.",
+          "status": "open",
+          "refs": [
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/ViewModels/AppViewModel.swift#L290",
+            "/Volumes/SSD_Mac/Universal Projects/privadi/Sources/PrivadiCore/Views/RootView.swift#L52"
+          ],
+          "source": "2026-03-25 post-P2 product readiness review",
+          "created_at": "2026-03-25T15:29:46+00:00",
+          "updated_at": "2026-03-25T15:29:46+00:00",
+          "resolved_at": null,
+          "resolution_note": null,
+          "history": [
+            {
+              "at": "2026-03-25T15:29:46+00:00",
+              "action": "created",
+              "note": null
             }
           ]
         },

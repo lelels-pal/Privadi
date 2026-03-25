@@ -29,6 +29,63 @@ public struct DemoPhotoLibraryService: PhotoLibraryServiceProtocol {
     }
 }
 
+public actor InMemoryMediaFingerprintingService: MediaFingerprintingServiceProtocol {
+    private var fingerprints: [String: String]
+
+    public init(seed: [String: String] = [:]) {
+        self.fingerprints = seed
+    }
+
+    public func cachedFingerprint(for key: String) async -> String? {
+        fingerprints[key]
+    }
+
+    public func storeFingerprint(_ fingerprint: String, for key: String) async {
+        fingerprints[key] = fingerprint
+    }
+}
+
+public actor FileBackedMediaFingerprintingService: MediaFingerprintingServiceProtocol {
+    private let fileURL: URL
+    private let fileManager: FileManager
+    private var fingerprints: [String: String]
+
+    public init(directoryURL: URL? = nil, fileManager: FileManager = .default) {
+        let resolvedDirectoryURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager)
+        self.fileManager = fileManager
+        self.fileURL = resolvedDirectoryURL.appendingPathComponent("media-fingerprints.json")
+        self.fingerprints = [:]
+
+        try? fileManager.createDirectory(at: resolvedDirectoryURL, withIntermediateDirectories: true)
+        if let data = try? Data(contentsOf: self.fileURL),
+           let loaded = try? JSONDecoder().decode([String: String].self, from: data) {
+            self.fingerprints = loaded
+        }
+    }
+
+    public func cachedFingerprint(for key: String) async -> String? {
+        fingerprints[key]
+    }
+
+    public func storeFingerprint(_ fingerprint: String, for key: String) async {
+        fingerprints[key] = fingerprint
+        try? persist()
+    }
+
+    private static func defaultDirectoryURL(fileManager: FileManager) -> URL {
+        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return base.appendingPathComponent("PrivadiCache", isDirectory: true)
+    }
+
+    private func persist() throws {
+        let data = try JSONEncoder().encode(fingerprints.sorted { $0.key < $1.key }.reduce(into: [String: String]()) { partialResult, item in
+            partialResult[item.key] = item.value
+        })
+        try data.write(to: fileURL, options: .atomic)
+    }
+}
+
 public struct HeuristicMediaAnalysisEngine: MediaAnalysisEngineProtocol {
     public init() {}
 
@@ -465,22 +522,40 @@ public final class FileVaultService: VaultServiceProtocol {
 
 public struct LocalHashBreachCheckService: BreachCheckServiceProtocol {
     private let hashes: Set<String>
+    private let metadata: BreachDatasetMetadata
 
     public init(hashes: Set<String>) {
         self.hashes = hashes
+        self.metadata = BreachDatasetMetadata(
+            version: "custom",
+            generatedAt: "unknown",
+            entryCount: hashes.count,
+            sourceDescription: "Injected hash set"
+        )
+    }
+
+    public init(contents: String, metadata: BreachDatasetMetadata) {
+        let loaded = Set(contents
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter(Self.isValidHashLine))
+        self.hashes = loaded
+        self.metadata = BreachDatasetMetadata(
+            version: metadata.version,
+            generatedAt: metadata.generatedAt,
+            entryCount: loaded.count,
+            sourceDescription: metadata.sourceDescription
+        )
     }
 
     public init(bundle: Bundle? = nil) {
         let bundle = bundle ?? .module
+        let metadata = Self.loadMetadata(from: bundle)
         if let url = bundle.url(forResource: "breach_hashes", withExtension: "txt"),
            let contents = try? String(contentsOf: url) {
-            let loaded = Set(contents
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty })
-            self.hashes = loaded
+            self.init(contents: contents, metadata: metadata)
         } else {
-            self.hashes = []
+            self.init(contents: "", metadata: metadata)
         }
     }
 
@@ -489,6 +564,39 @@ public struct LocalHashBreachCheckService: BreachCheckServiceProtocol {
         let hash = SHA256.hash(data: Data(normalized.utf8)).compactMap { String(format: "%02x", $0) }.joined()
         let breached = hashes.contains(hash)
         return BreachCheckResult(email: normalized, isBreached: breached, matchedHashes: breached ? 1 : 0)
+    }
+
+    public func datasetMetadata() -> BreachDatasetMetadata {
+        metadata
+    }
+
+    private static func loadMetadata(from bundle: Bundle) -> BreachDatasetMetadata {
+        guard let url = bundle.url(forResource: "breach_hashes_metadata", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let metadata = try? JSONDecoder().decode(BreachDatasetMetadata.self, from: data) else {
+            return BreachDatasetMetadata(
+                version: "missing",
+                generatedAt: "unknown",
+                entryCount: 0,
+                sourceDescription: "Metadata unavailable"
+            )
+        }
+
+        return metadata
+    }
+
+    private static func isValidHashLine(_ line: String) -> Bool {
+        guard line.count == 64 else {
+            return false
+        }
+        return line.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 48...57, 97...102:
+                true
+            default:
+                false
+            }
+        }
     }
 }
 

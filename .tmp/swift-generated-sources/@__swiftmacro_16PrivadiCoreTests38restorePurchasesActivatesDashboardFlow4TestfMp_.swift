@@ -9,7 +9,7 @@
   named: "restorePurchasesActivatesDashboardFlow()",
   in: nil,
   xcTestCompatibleSelector: nil,
-  traits: [],sourceLocation: Testing.SourceLocation(fileID: "PrivadiCoreTests/PrivadiCoreTests.swift", filePath: "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift", line: 117, column: 2),
+  traits: [],sourceLocation: Testing.SourceLocation(fileID: "PrivadiCoreTests/PrivadiCoreTests.swift", filePath: "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift", line: 228, column: 2),
   parameters: [],
   testFunction: $s16PrivadiCoreTests38restorePurchasesActivatesDashboardFlow4TestfMp_16e2abbbe81ed4bd7cfMu_
 )
@@ -36,4 +36,4 @@ enum $s16PrivadiCoreTests38restorePurchasesActivatesDashboardFlow4TestfMp_20__ðŸ
   }
 }
 
-// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:135:2-135:2
+// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:246:2-246:2

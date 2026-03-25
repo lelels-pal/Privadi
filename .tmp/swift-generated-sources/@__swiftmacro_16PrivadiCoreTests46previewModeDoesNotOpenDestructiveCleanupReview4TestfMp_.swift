@@ -9,7 +9,7 @@
   named: "previewModeDoesNotOpenDestructiveCleanupReview()",
   in: nil,
   xcTestCompatibleSelector: nil,
-  traits: [],sourceLocation: Testing.SourceLocation(fileID: "PrivadiCoreTests/PrivadiCoreTests.swift", filePath: "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift", line: 69, column: 2),
+  traits: [],sourceLocation: Testing.SourceLocation(fileID: "PrivadiCoreTests/PrivadiCoreTests.swift", filePath: "/Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift", line: 180, column: 2),
   parameters: [],
   testFunction: $s16PrivadiCoreTests46previewModeDoesNotOpenDestructiveCleanupReview4TestfMp_17Z5f2e92cadc040577fMu_
 )
@@ -36,4 +36,4 @@ enum $s16PrivadiCoreTests46previewModeDoesNotOpenDestructiveCleanupReview4TestfM
   }
 }
 
-// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:78:2-78:2
+// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:189:2-189:2

@@ -1,6 +1,22 @@
 import Foundation
 import SwiftUI
 
+private struct ScanDependencies: Sendable {
+    let photoLibraryService: any PhotoLibraryServiceProtocol
+    let mediaAnalysisEngine: any MediaAnalysisEngineProtocol
+    let smartCleanPolicy: any SmartCleanPolicyProtocol
+    let compressionEngine: any CompressionEngineProtocol
+    let contactsCleanupService: any ContactsCleanupServiceProtocol
+}
+
+private struct ScanPipelinePayload: Sendable {
+    let analysis: LibraryAnalysis
+    let selection: SmartCleanSelection
+    let compressionEstimate: CompressionEstimate
+    let mergeSuggestions: [ContactMergeSuggestion]
+    let accessLevel: PhotoLibraryAccessLevel
+}
+
 @MainActor
 public final class AppViewModel: ObservableObject {
     public enum Stage: Sendable, Equatable {
@@ -380,58 +396,82 @@ public final class AppViewModel: ObservableObject {
     }
 
     private func loadDashboard(as experienceMode: ExperienceMode, scope: ScanScope) async throws {
-        let assets = try await environment.photoLibraryService.loadAssets(scope: scope)
-
-        let contacts: [ContactRecord]
-        if scope.includesContacts {
-            contacts = (try? await environment.contactsCleanupService.loadContacts(scope: scope)) ?? []
-        } else {
-            contacts = []
-        }
-
-        let analysis = await environment.mediaAnalysisEngine.analyze(assets: assets)
-        let selection = environment.smartCleanPolicy.selection(for: analysis)
-        let compressionEstimate = await environment.compressionEngine.estimateSavings(for: selection.autoSelectedAssets)
-        let mergeSuggestions = environment.contactsCleanupService.mergeSuggestions(from: contacts)
-        let accessLevel = environment.photoLibraryService.currentAccessLevel()
+        let dependencies = ScanDependencies(
+            photoLibraryService: environment.photoLibraryService,
+            mediaAnalysisEngine: environment.mediaAnalysisEngine,
+            smartCleanPolicy: environment.smartCleanPolicy,
+            compressionEngine: environment.compressionEngine,
+            contactsCleanupService: environment.contactsCleanupService
+        )
+        let payload = try await Task.detached(priority: .userInitiated) {
+            try await Self.runScanPipeline(scope: scope, dependencies: dependencies)
+        }.value
 
         self.experienceMode = experienceMode
-        self.selection = selection
-        self.compressionEstimate = compressionEstimate
-        self.contactSuggestions = mergeSuggestions
+        self.selection = payload.selection
+        self.compressionEstimate = payload.compressionEstimate
+        self.contactSuggestions = payload.mergeSuggestions
         refreshVaultState(preserveUnlockState: true)
         self.cleanupCategories = buildCleanupCategories(
-            analysis: analysis,
-            selection: selection,
-            compressionEstimate: compressionEstimate,
-            contactSuggestionCount: mergeSuggestions.count,
+            analysis: payload.analysis,
+            selection: payload.selection,
+            compressionEstimate: payload.compressionEstimate,
+            contactSuggestionCount: payload.mergeSuggestions.count,
             experienceMode: experienceMode
         )
         syncSelectedCleanupCategoryIDs()
 
         let deleteBytes = cleanupCategories
             .first(where: { $0.kind == .mediaDelete })?
-            .estimatedBytes ?? selection.estimatedReclaimableBytes
+            .estimatedBytes ?? payload.selection.estimatedReclaimableBytes
 
         self.summary = DashboardSummary(
-            totalItems: analysis.assets.count,
+            totalItems: payload.analysis.assets.count,
             reclaimableBytes: deleteBytes,
-            duplicateGroupCount: analysis.duplicateGroups.count,
-            similarGroupCount: analysis.similarGroups.count,
-            lowQualityCount: analysis.lowQualityAssets.count,
-            largeVideoCount: analysis.largeVideoAssets.count,
-            screenshotCount: analysis.screenshots.count,
-            sloMoCount: analysis.sloMoAssets.count,
-            contactSuggestionCount: mergeSuggestions.count,
+            duplicateGroupCount: payload.analysis.duplicateGroups.count,
+            similarGroupCount: payload.analysis.similarGroups.count,
+            lowQualityCount: payload.analysis.lowQualityAssets.count,
+            largeVideoCount: payload.analysis.largeVideoAssets.count,
+            screenshotCount: payload.analysis.screenshots.count,
+            sloMoCount: payload.analysis.sloMoAssets.count,
+            contactSuggestionCount: payload.mergeSuggestions.count,
             vaultItemCount: vaultRecords.count
         )
-        statusText = statusText(for: experienceMode, assetCount: analysis.assets.count, accessLevel: accessLevel)
+        statusText = statusText(for: experienceMode, assetCount: payload.analysis.assets.count, accessLevel: payload.accessLevel)
         environment.metricsService.record(
             AppMetricEvent(
                 name: experienceMode == .limitedPreview ? "limited_preview_completed" : "scan_completed"
             )
         )
         stage = .dashboard
+    }
+
+    nonisolated private static func runScanPipeline(
+        scope: ScanScope,
+        dependencies: ScanDependencies
+    ) async throws -> ScanPipelinePayload {
+        let assets = try await dependencies.photoLibraryService.loadAssets(scope: scope)
+
+        let contacts: [ContactRecord]
+        if scope.includesContacts {
+            contacts = (try? await dependencies.contactsCleanupService.loadContacts(scope: scope)) ?? []
+        } else {
+            contacts = []
+        }
+
+        let analysis = await dependencies.mediaAnalysisEngine.analyze(assets: assets)
+        let selection = dependencies.smartCleanPolicy.selection(for: analysis)
+        let compressionEstimate = await dependencies.compressionEngine.estimateSavings(for: selection.autoSelectedAssets)
+        let mergeSuggestions = dependencies.contactsCleanupService.mergeSuggestions(from: contacts)
+        let accessLevel = dependencies.photoLibraryService.currentAccessLevel()
+
+        return ScanPipelinePayload(
+            analysis: analysis,
+            selection: selection,
+            compressionEstimate: compressionEstimate,
+            mergeSuggestions: mergeSuggestions,
+            accessLevel: accessLevel
+        )
     }
 
     private func refreshVaultState(preserveUnlockState: Bool) {

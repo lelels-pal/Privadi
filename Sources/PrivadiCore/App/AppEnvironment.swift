@@ -2,6 +2,7 @@ import Foundation
 
 public struct AppEnvironment {
     public let photoLibraryService: PhotoLibraryServiceProtocol
+    public let mediaFingerprintingService: MediaFingerprintingServiceProtocol
     public let mediaAnalysisEngine: MediaAnalysisEngineProtocol
     public let smartCleanPolicy: SmartCleanPolicyProtocol
     public let compressionEngine: CompressionEngineProtocol
@@ -14,6 +15,7 @@ public struct AppEnvironment {
 
     public init(
         photoLibraryService: PhotoLibraryServiceProtocol,
+        mediaFingerprintingService: MediaFingerprintingServiceProtocol,
         mediaAnalysisEngine: MediaAnalysisEngineProtocol,
         smartCleanPolicy: SmartCleanPolicyProtocol,
         compressionEngine: CompressionEngineProtocol,
@@ -25,6 +27,7 @@ public struct AppEnvironment {
         metricsService: MetricsServiceProtocol
     ) {
         self.photoLibraryService = photoLibraryService
+        self.mediaFingerprintingService = mediaFingerprintingService
         self.mediaAnalysisEngine = mediaAnalysisEngine
         self.smartCleanPolicy = smartCleanPolicy
         self.compressionEngine = compressionEngine
@@ -38,8 +41,10 @@ public struct AppEnvironment {
 
     @MainActor
     public static func livePreview() -> AppEnvironment {
-        AppEnvironment(
+        let mediaFingerprintingService = InMemoryMediaFingerprintingService()
+        return AppEnvironment(
             photoLibraryService: DemoPhotoLibraryService(),
+            mediaFingerprintingService: mediaFingerprintingService,
             mediaAnalysisEngine: HeuristicMediaAnalysisEngine(),
             smartCleanPolicy: SmartCleanPolicy(),
             compressionEngine: CompressionEngine(),
@@ -54,8 +59,10 @@ public struct AppEnvironment {
 
     @MainActor
     public static func liveApp() -> AppEnvironment {
-        AppEnvironment(
-            photoLibraryService: DevicePhotoLibraryService(),
+        let mediaFingerprintingService = FileBackedMediaFingerprintingService()
+        return AppEnvironment(
+            photoLibraryService: DevicePhotoLibraryService(mediaFingerprintingService: mediaFingerprintingService),
+            mediaFingerprintingService: mediaFingerprintingService,
             mediaAnalysisEngine: HeuristicMediaAnalysisEngine(),
             smartCleanPolicy: SmartCleanPolicy(),
             compressionEngine: CompressionEngine(),

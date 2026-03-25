@@ -1,3 +1,3 @@
-Testing.__checkBinaryOperation(viewModel.subscriptionState.plan,{ $0 == $1() },.monthly,expression: .__fromBinaryOperation(.__fromSyntaxNode("viewModel.subscriptionState.plan"),"==",.__fromSyntaxNode(".monthly")),comments: [],isRequired: false,sourceLocation: Testing.SourceLocation.__here()).__expected()
+Testing.__checkBinaryOperation(secondService.listRecords().count,{ $0 == $1() },1,expression: .__fromBinaryOperation(.__fromSyntaxNode("secondService.listRecords().count"),"==",.__fromSyntaxNode("1")),comments: [],isRequired: false,sourceLocation: Testing.SourceLocation.__here()).__expected()
 
-// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:129:5-129:58
+// original-source-range: /Volumes/SSD_Mac/Universal Projects/privadi/Tests/PrivadiCoreTests/PrivadiCoreTests.swift:129:5-129:52

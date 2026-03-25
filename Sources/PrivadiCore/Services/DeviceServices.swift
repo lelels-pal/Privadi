@@ -29,7 +29,11 @@ public enum DeviceDataAccessError: LocalizedError {
 }
 
 public struct DevicePhotoLibraryService: PhotoLibraryServiceProtocol {
-    public init() {}
+    private let mediaFingerprintingService: MediaFingerprintingServiceProtocol
+
+    public init(mediaFingerprintingService: MediaFingerprintingServiceProtocol = FileBackedMediaFingerprintingService()) {
+        self.mediaFingerprintingService = mediaFingerprintingService
+    }
 
     public func loadAssets(scope: ScanScope) async throws -> [MediaAsset] {
         #if canImport(Photos)
@@ -45,11 +49,19 @@ public struct DevicePhotoLibraryService: PhotoLibraryServiceProtocol {
         }
 
         let fetchedAssets = PHAsset.fetchAssets(with: options)
-        var mappedAssets: [MediaAsset] = []
-        mappedAssets.reserveCapacity(fetchedAssets.count)
+        var sourceAssets: [PHAsset] = []
+        sourceAssets.reserveCapacity(fetchedAssets.count)
 
         fetchedAssets.enumerateObjects { asset, _, _ in
-            mappedAssets.append(mapAsset(asset))
+            sourceAssets.append(asset)
+        }
+
+        var mappedAssets: [MediaAsset] = []
+        mappedAssets.reserveCapacity(sourceAssets.count)
+
+        for asset in sourceAssets {
+            let checksum = await cachedChecksum(for: asset)
+            mappedAssets.append(mapAsset(asset, checksum: checksum))
         }
 
         if mappedAssets.isEmpty {
@@ -85,13 +97,15 @@ public struct DevicePhotoLibraryService: PhotoLibraryServiceProtocol {
         }
 
         return await withCheckedContinuation { continuation in
-            PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
-                continuation.resume(returning: status)
+            Task { @MainActor in
+                PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+                    continuation.resume(returning: status)
+                }
             }
         }
     }
 
-    private func mapAsset(_ asset: PHAsset) -> MediaAsset {
+    private func mapAsset(_ asset: PHAsset, checksum: String?) -> MediaAsset {
         let kind = mediaKind(for: asset)
         let estimatedBytes = estimatedByteSize(for: asset, kind: kind)
         let createdAt = asset.creationDate ?? .now
@@ -102,7 +116,7 @@ public struct DevicePhotoLibraryService: PhotoLibraryServiceProtocol {
             name: fallbackName(for: kind, createdAt: createdAt),
             kind: kind,
             byteSize: estimatedBytes,
-            checksum: nil,
+            checksum: checksum,
             similarityKey: similarityKey(for: asset, kind: kind),
             qualityScore: qualityScore(for: asset, kind: kind),
             eyeClosureScore: 0,
@@ -112,6 +126,24 @@ public struct DevicePhotoLibraryService: PhotoLibraryServiceProtocol {
         )
     }
 
+    private func cachedChecksum(for asset: PHAsset) async -> String? {
+        let cacheKey = fingerprintCacheKey(for: asset)
+        return await mediaFingerprintingService.cachedFingerprint(for: cacheKey)
+    }
+
+    private func fingerprintCacheKey(for asset: PHAsset) -> String {
+        let createdAt = asset.creationDate?.timeIntervalSince1970 ?? 0
+        let modifiedAt = asset.modificationDate?.timeIntervalSince1970 ?? 0
+        return [
+            asset.localIdentifier,
+            "\(asset.mediaType.rawValue)",
+            "\(asset.mediaSubtypes.rawValue)",
+            "\(asset.pixelWidth)x\(asset.pixelHeight)",
+            String(format: "%.3f", asset.duration),
+            String(format: "%.0f", createdAt),
+            String(format: "%.0f", modifiedAt),
+        ].joined(separator: "|")
+    }
     private func mediaKind(for asset: PHAsset) -> MediaKind {
         if asset.mediaSubtypes.contains(.photoScreenshot) {
             return .screenshot
@@ -262,15 +294,7 @@ public struct DeviceContactsCleanupService: ContactsCleanupServiceProtocol {
         case .denied, .restricted:
             return false
         case .notDetermined:
-            return try await withCheckedThrowingContinuation { continuation in
-                store.requestAccess(for: .contacts) { granted, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume(returning: granted)
-                    }
-                }
-            }
+            return try await store.requestAccess(for: .contacts)
         @unknown default:
             return false
         }

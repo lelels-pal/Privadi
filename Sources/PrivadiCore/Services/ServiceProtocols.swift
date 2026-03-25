@@ -1,28 +1,28 @@
 import Foundation
 
-@MainActor
-public protocol PhotoLibraryServiceProtocol {
+public protocol MediaFingerprintingServiceProtocol: Sendable {
+    func cachedFingerprint(for key: String) async -> String?
+    func storeFingerprint(_ fingerprint: String, for key: String) async
+}
+
+public protocol PhotoLibraryServiceProtocol: Sendable {
     func loadAssets(scope: ScanScope) async throws -> [MediaAsset]
     func currentAccessLevel() -> PhotoLibraryAccessLevel
 }
 
-@MainActor
-public protocol MediaAnalysisEngineProtocol {
+public protocol MediaAnalysisEngineProtocol: Sendable {
     func analyze(assets: [MediaAsset]) async -> LibraryAnalysis
 }
 
-@MainActor
-public protocol SmartCleanPolicyProtocol {
+public protocol SmartCleanPolicyProtocol: Sendable {
     func selection(for analysis: LibraryAnalysis) -> SmartCleanSelection
 }
 
-@MainActor
-public protocol CompressionEngineProtocol {
+public protocol CompressionEngineProtocol: Sendable {
     func estimateSavings(for assets: [MediaAsset]) async -> CompressionEstimate
 }
 
-@MainActor
-public protocol ContactsCleanupServiceProtocol {
+public protocol ContactsCleanupServiceProtocol: Sendable {
     func loadContacts(scope: ScanScope) async throws -> [ContactRecord]
     func mergeSuggestions(from contacts: [ContactRecord]) -> [ContactMergeSuggestion]
 }
@@ -40,6 +40,7 @@ public protocol VaultServiceProtocol {
 @MainActor
 public protocol BreachCheckServiceProtocol {
     func check(email: String) -> BreachCheckResult
+    func datasetMetadata() -> BreachDatasetMetadata
 }
 
 @MainActor
