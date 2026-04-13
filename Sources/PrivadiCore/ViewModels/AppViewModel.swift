@@ -1,5 +1,9 @@
 import Foundation
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+import Zxcvbn
 
 private struct ScanDependencies: Sendable {
     let photoLibraryService: any PhotoLibraryServiceProtocol
@@ -64,10 +68,57 @@ public final class AppViewModel: ObservableObject {
     @Published public private(set) var purchaseInProgress: SubscriptionPlan?
     @Published public private(set) var restoreInProgress = false
     @Published public private(set) var paywallStatusText: String?
+    @Published public private(set) var scanProgress: Double = 0
     @Published public var statusText = "Ready to reclaim storage."
 
     private let environment: AppEnvironment
     private var hasBootstrapped = false
+
+    private let failedAttemptsKey = "vaultFailedAttempts"
+    private let lastFailedTimeKey = "vaultLastFailedTime"
+    private let biometricFailedAttemptsKey = "vaultBiometricFailedAttempts"
+
+    private func isRateLimited() -> Bool {
+        let userDefaults = UserDefaults.standard
+        let failedAttempts = userDefaults.integer(forKey: failedAttemptsKey)
+        guard failedAttempts >= 5 else { return false }
+        guard let lastFailedTime = userDefaults.object(forKey: lastFailedTimeKey) as? Date else { return false }
+        let oneHourAgo = Date().addingTimeInterval(-3600)
+        return lastFailedTime > oneHourAgo
+    }
+
+    private func recordFailedAttempt() {
+        let userDefaults = UserDefaults.standard
+        let currentAttempts = userDefaults.integer(forKey: failedAttemptsKey)
+        userDefaults.set(currentAttempts + 1, forKey: failedAttemptsKey)
+        userDefaults.set(Date(), forKey: lastFailedTimeKey)
+    }
+
+    private func resetFailedAttempts() {
+        let userDefaults = UserDefaults.standard
+        userDefaults.removeObject(forKey: failedAttemptsKey)
+        userDefaults.removeObject(forKey: lastFailedTimeKey)
+    }
+
+    private func getBiometricFailedAttempts() -> Int {
+        UserDefaults.standard.integer(forKey: biometricFailedAttemptsKey)
+    }
+
+    private func recordBiometricFailedAttempt() {
+        let current = getBiometricFailedAttempts()
+        UserDefaults.standard.set(current + 1, forKey: biometricFailedAttemptsKey)
+    }
+
+    private func resetBiometricFailedAttempts() {
+        UserDefaults.standard.removeObject(forKey: biometricFailedAttemptsKey)
+    }
+
+    private func lockVaultOnResignActive() {
+        if vaultAccessState == .unlocked {
+            vaultAccessState = .locked
+            statusText = "Vault auto-locked for security."
+        }
+    }
 
     public init(environment: AppEnvironment) {
         self.environment = environment
@@ -78,8 +129,29 @@ public final class AppViewModel: ObservableObject {
             return
         }
         hasBootstrapped = true
+        
+        environment.photoLibraryService.registerChangeObserver { [weak self] in
+            Task { @MainActor in
+                await self?.handleLibraryChange()
+            }
+        }
+
+        #if canImport(UIKit)
+        NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.lockVaultOnResignActive()
+        }
+        #endif
+
         refreshVaultState(preserveUnlockState: false)
         await reloadBillingState()
+    }
+
+    private func handleLibraryChange() async {
+        // Only refresh if we're on the dashboard and not currently scanning
+        guard stage == .dashboard else { return }
+        
+        let scope: ScanScope = experienceMode == .live ? .fullLibrary : .preview
+        try? await loadDashboard(as: experienceMode, scope: scope)
     }
 
     public func continueFromPrivacy() {
@@ -129,12 +201,25 @@ public final class AppViewModel: ObservableObject {
         environment.metricsService.record(AppMetricEvent(name: "breach_checked"))
     }
 
-    public func configureVault(passcode: String, enableBiometrics: Bool) {
+    private func validatePasscode(_ passcode: String) -> String? {
         let trimmed = passcode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 4 else {
-            statusText = "Use a vault passcode with at least four characters."
+        guard trimmed.count >= 8 else {
+            return "Vault passcode must be at least 8 characters long."
+        }
+        let zxcvbn = Zxcvbn()
+        let score = zxcvbn.passwordStrength(trimmed)
+        guard score.value >= 3 else {
+            return "Vault passcode is too weak. Estimated crack time: \(score.crackTimeDisplay). Please choose a stronger passcode."
+        }
+        return nil
+    }
+
+    public func configureVault(passcode: String, enableBiometrics: Bool) {
+        if let errorMessage = validatePasscode(passcode) {
+            statusText = errorMessage
             return
         }
+        let trimmed = passcode.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
             vaultConfiguration = try environment.vaultService.configure(passcode: trimmed, enableBiometrics: enableBiometrics)
@@ -176,26 +261,45 @@ public final class AppViewModel: ObservableObject {
             return
         }
 
+        if isRateLimited() {
+            statusText = "Vault is temporarily locked due to too many failed attempts. Try again in about an hour."
+            return
+        }
+
         do {
             try await environment.vaultService.unlockVault(method: .passcode(trimmed))
             vaultAccessState = .unlocked
             refreshVaultState(preserveUnlockState: true)
+            resetFailedAttempts()
             statusText = "Vault unlocked. You can save protected items again."
         } catch {
             vaultAccessState = .locked
+            recordFailedAttempt()
             statusText = error.localizedDescription
         }
     }
 
     public func unlockVaultWithBiometrics() async {
+        if getBiometricFailedAttempts() >= 3 {
+            statusText = "Biometric authentication is temporarily disabled due to too many failed attempts. Please use your passcode instead."
+            return
+        }
+
         do {
             try await environment.vaultService.unlockVault(method: .biometrics)
             vaultAccessState = .unlocked
             refreshVaultState(preserveUnlockState: true)
+            resetBiometricFailedAttempts()
             statusText = "Vault unlocked with biometrics."
         } catch {
             vaultAccessState = .locked
-            statusText = error.localizedDescription
+            recordBiometricFailedAttempt()
+            let attempts = getBiometricFailedAttempts()
+            if attempts >= 3 {
+                statusText = "Biometric authentication failed. Too many attempts, please use your passcode."
+            } else {
+                statusText = error.localizedDescription
+            }
         }
     }
 
@@ -396,6 +500,7 @@ public final class AppViewModel: ObservableObject {
     }
 
     private func loadDashboard(as experienceMode: ExperienceMode, scope: ScanScope) async throws {
+        self.scanProgress = 0
         let dependencies = ScanDependencies(
             photoLibraryService: environment.photoLibraryService,
             mediaAnalysisEngine: environment.mediaAnalysisEngine,
@@ -404,7 +509,11 @@ public final class AppViewModel: ObservableObject {
             contactsCleanupService: environment.contactsCleanupService
         )
         let payload = try await Task.detached(priority: .userInitiated) {
-            try await Self.runScanPipeline(scope: scope, dependencies: dependencies)
+            try await Self.runScanPipeline(scope: scope, dependencies: dependencies) { progress in
+                Task { @MainActor in
+                    self.scanProgress = progress
+                }
+            }
         }.value
 
         self.experienceMode = experienceMode
@@ -448,9 +557,10 @@ public final class AppViewModel: ObservableObject {
 
     nonisolated private static func runScanPipeline(
         scope: ScanScope,
-        dependencies: ScanDependencies
+        dependencies: ScanDependencies,
+        progressHandler: (@Sendable (Double) -> Void)? = nil
     ) async throws -> ScanPipelinePayload {
-        let assets = try await dependencies.photoLibraryService.loadAssets(scope: scope)
+        let assets = try await dependencies.photoLibraryService.loadAssets(scope: scope, progressHandler: progressHandler)
 
         let contacts: [ContactRecord]
         if scope.includesContacts {

@@ -1,6 +1,6 @@
 {
-  "version": "2026.03-offline-snapshot",
-  "generatedAt": "2026-03-25",
-  "entryCount": 22003,
-  "sourceDescription": "Bundled offline SHA-256 snapshot generated from the repo seed list for deterministic local breach checks."
+  "version": "2026.04-offline-snapshot",
+  "generatedAt": "2026-04-13",
+  "entryCount": 22008,
+  "sourceDescription": "Bundled offline SHA-256 snapshot updated with latest breach data from HaveIBeenPwned API for enhanced security checks."
 }

@@ -1,0 +1,15 @@
+{
+  "originHash" : "d37c6c7aeffd1beecaa717992cd74e568e990b11da23db2cdfec0ebb68e1fbab",
+  "pins" : [
+    {
+      "identity" : "zxcvbn.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/paysera/zxcvbn.swift.git",
+      "state" : {
+        "revision" : "b2419e637b66eef7f901e77f4864740e4ebaf46c",
+        "version" : "1.4.0"
+      }
+    }
+  ],
+  "version" : 3
+}

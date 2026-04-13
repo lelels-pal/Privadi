@@ -35,9 +35,9 @@ func bundledBreachSnapshotIncludesProductionMetadata() {
     let service = LocalHashBreachCheckService()
     let metadata = service.datasetMetadata()
 
-    #expect(metadata.version == "2026.03-offline-snapshot")
+    #expect(metadata.version == "2026.04-offline-snapshot")
     #expect(metadata.entryCount >= 20_000)
-    #expect(metadata.generatedAt == "2026-03-25")
+    #expect(metadata.generatedAt == "2026-04-13")
 }
 
 @MainActor
@@ -531,7 +531,7 @@ private final class ScriptedPhotoLibraryService: PhotoLibraryServiceProtocol, @u
         self.accessLevel = accessLevel
     }
 
-    func loadAssets(scope: ScanScope) async throws -> [MediaAsset] {
+    func loadAssets(scope: ScanScope, progressHandler: (@Sendable (Double) -> Void)? = nil) async throws -> [MediaAsset] {
         switch scope {
         case .preview:
             return try nextResponse(from: &previewResponses)
@@ -542,6 +542,10 @@ private final class ScriptedPhotoLibraryService: PhotoLibraryServiceProtocol, @u
 
     func currentAccessLevel() -> PhotoLibraryAccessLevel {
         accessLevel
+    }
+
+    func registerChangeObserver(_ callback: @escaping @Sendable () -> Void) {
+        // No-op for tests
     }
 
     private func nextResponse(from responses: inout [Response]) throws -> [MediaAsset] {

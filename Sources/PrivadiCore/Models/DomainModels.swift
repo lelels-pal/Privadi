@@ -379,6 +379,25 @@ public enum VaultUnlockMethod: Sendable, Hashable {
     case biometrics
 }
 
+public enum VaultAuditEventType: String, Codable, Sendable {
+    case configured
+    case unlocked
+    case stored
+    case accessed
+}
+
+public struct VaultAuditEvent: Codable, Sendable, Hashable {
+    public let timestamp: Date
+    public let eventType: VaultAuditEventType
+    public let details: String?
+
+    public init(eventType: VaultAuditEventType, details: String? = nil) {
+        self.timestamp = Date()
+        self.eventType = eventType
+        self.details = details
+    }
+}
+
 public struct SubscriptionProduct: Identifiable, Codable, Sendable, Hashable {
     public let id: String
     public let plan: SubscriptionPlan

@@ -143,6 +143,7 @@
 				DEVELOPMENT_TEAM = 433TY6KAF3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSContactsUsageDescription = "Privadi reviews your contacts on-device to suggest duplicate or incomplete entries when you run a full private scan.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Privadi uses Face ID to securely unlock your encrypted local vault.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Privadi scans your photos and videos on-device so you can preview reclaimable space and run a full private cleanup plan.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -174,6 +175,7 @@
 				DEVELOPMENT_TEAM = 433TY6KAF3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSContactsUsageDescription = "Privadi reviews your contacts on-device to suggest duplicate or incomplete entries when you run a full private scan.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Privadi uses Face ID to securely unlock your encrypted local vault.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Privadi scans your photos and videos on-device so you can preview reclaimable space and run a full private cleanup plan.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

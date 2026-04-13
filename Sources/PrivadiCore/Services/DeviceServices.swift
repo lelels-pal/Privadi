@@ -28,14 +28,40 @@ public enum DeviceDataAccessError: LocalizedError {
     }
 }
 
-public struct DevicePhotoLibraryService: PhotoLibraryServiceProtocol {
+private final class Box<T>: @unchecked Sendable {
+    var value: T
+    init(value: T) { self.value = value }
+}
+
+public final class DevicePhotoLibraryService: NSObject, PhotoLibraryServiceProtocol, PHPhotoLibraryChangeObserver {
     private let mediaFingerprintingService: MediaFingerprintingServiceProtocol
+    private let onChangeBox = Box<(@Sendable () -> Void)?>(value: nil)
 
     public init(mediaFingerprintingService: MediaFingerprintingServiceProtocol = FileBackedMediaFingerprintingService()) {
         self.mediaFingerprintingService = mediaFingerprintingService
+        super.init()
+        #if canImport(Photos)
+        PHPhotoLibrary.shared().register(self)
+        #endif
     }
 
-    public func loadAssets(scope: ScanScope) async throws -> [MediaAsset] {
+    deinit {
+        #if canImport(Photos)
+        PHPhotoLibrary.shared().unregisterChangeObserver(self)
+        #endif
+    }
+
+    public func registerChangeObserver(_ callback: @escaping @Sendable () -> Void) {
+        self.onChangeBox.value = callback
+    }
+
+    #if canImport(Photos)
+    public func photoLibraryDidChange(_ changeInstance: PHChange) {
+        onChangeBox.value?()
+    }
+    #endif
+
+    public func loadAssets(scope: ScanScope, progressHandler: (@Sendable (Double) -> Void)? = nil) async throws -> [MediaAsset] {
         #if canImport(Photos)
         let authorization = await requestPhotoAuthorizationIfNeeded()
         guard authorization == .authorized || authorization == .limited else {
@@ -49,19 +75,46 @@ public struct DevicePhotoLibraryService: PhotoLibraryServiceProtocol {
         }
 
         let fetchedAssets = PHAsset.fetchAssets(with: options)
-        var sourceAssets: [PHAsset] = []
-        sourceAssets.reserveCapacity(fetchedAssets.count)
-
-        fetchedAssets.enumerateObjects { asset, _, _ in
-            sourceAssets.append(asset)
-        }
-
         var mappedAssets: [MediaAsset] = []
-        mappedAssets.reserveCapacity(sourceAssets.count)
+        mappedAssets.reserveCapacity(min(fetchedAssets.count, 5000))
 
-        for asset in sourceAssets {
-            let checksum = await cachedChecksum(for: asset)
-            mappedAssets.append(mapAsset(asset, checksum: checksum))
+        let batchSize = 100
+        var currentIndex = 0
+
+        while currentIndex < fetchedAssets.count {
+            let nextIndex = min(currentIndex + batchSize, fetchedAssets.count)
+            let range = currentIndex..<nextIndex
+
+            // Process batch
+            var batchAssets: [PHAsset] = []
+            for i in range {
+                batchAssets.append(fetchedAssets.object(at: i))
+            }
+
+            // Map batch assets concurrently within the batch
+            let mappedBatch = await withTaskGroup(of: MediaAsset.self) { group in
+                for asset in batchAssets {
+                    group.addTask {
+                        let checksum = await self.cachedChecksum(for: asset)
+                        return self.mapAsset(asset, checksum: checksum)
+                    }
+                }
+
+                var results: [MediaAsset] = []
+                for await asset in group {
+                    results.append(asset)
+                }
+                return results
+            }
+
+            mappedAssets.append(contentsOf: mappedBatch)
+            currentIndex = nextIndex
+
+            // Report progress
+            progressHandler?(Double(currentIndex) / Double(max(fetchedAssets.count, 1)))
+
+            // Cooperative cancellation check and yielding to prevent blocking MainActor if called from there
+            await Task.yield()
         }
 
         if mappedAssets.isEmpty {

@@ -6,8 +6,9 @@ public protocol MediaFingerprintingServiceProtocol: Sendable {
 }
 
 public protocol PhotoLibraryServiceProtocol: Sendable {
-    func loadAssets(scope: ScanScope) async throws -> [MediaAsset]
+    func loadAssets(scope: ScanScope, progressHandler: (@Sendable (Double) -> Void)?) async throws -> [MediaAsset]
     func currentAccessLevel() -> PhotoLibraryAccessLevel
+    func registerChangeObserver(_ callback: @escaping @Sendable () -> Void)
 }
 
 public protocol MediaAnalysisEngineProtocol: Sendable {

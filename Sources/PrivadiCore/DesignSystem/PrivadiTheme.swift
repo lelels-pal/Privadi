@@ -11,42 +11,9 @@ public enum PrivadiTheme {
     public static let accentMint = Color(red: 0.74, green: 0.91, blue: 0.84)
     public static let warning = Color(red: 0.94, green: 0.54, blue: 0.40)
 
+    @ViewBuilder
     public static var background: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.96, green: 0.97, blue: 0.99),
-                    Color(red: 0.93, green: 0.95, blue: 0.99),
-                    Color(red: 0.98, green: 0.98, blue: 0.99),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            Circle()
-                .fill(accent.opacity(0.16))
-                .frame(width: 340, height: 340)
-                .blur(radius: 90)
-                .offset(x: -160, y: -240)
-
-            Circle()
-                .fill(accentLavender.opacity(0.22))
-                .frame(width: 300, height: 300)
-                .blur(radius: 96)
-                .offset(x: 150, y: 40)
-
-            Circle()
-                .fill(accentBlush.opacity(0.16))
-                .frame(width: 360, height: 360)
-                .blur(radius: 120)
-                .offset(x: 40, y: 320)
-
-            Circle()
-                .fill(accentMint.opacity(0.12))
-                .frame(width: 320, height: 320)
-                .blur(radius: 110)
-                .offset(x: -170, y: 460)
-        }
+        AdaptiveBackgroundView()
     }
 
     public static func titleFont(size: CGFloat) -> Font {
@@ -59,6 +26,7 @@ public enum PrivadiTheme {
 }
 
 public struct PrivadiGlassCardModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     private let cornerRadius: CGFloat
     private let padding: CGFloat
     private let alignment: Alignment
@@ -75,17 +43,18 @@ public struct PrivadiGlassCardModifier: ViewModifier {
 
     public func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let baseColor = colorScheme == .dark ? Color.black : Color.white
 
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: alignment)
             .background {
                 ZStack {
-                    shape.fill(Color.white.opacity(0.58))
+                    shape.fill(baseColor.opacity(0.58))
                     shape.fill(.ultraThinMaterial)
                     shape.fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.36), Color.white.opacity(0.14)],
+                            colors: [baseColor.opacity(0.36), baseColor.opacity(0.14)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -95,7 +64,7 @@ public struct PrivadiGlassCardModifier: ViewModifier {
             .overlay {
                 shape.stroke(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.88), Color.white.opacity(0.30)],
+                        colors: [baseColor.opacity(0.88), baseColor.opacity(0.30)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -103,7 +72,7 @@ public struct PrivadiGlassCardModifier: ViewModifier {
                 )
             }
             .shadow(color: PrivadiTheme.accent.opacity(0.10), radius: 32, x: 0, y: 20)
-            .shadow(color: Color.white.opacity(0.65), radius: 10, x: -6, y: -6)
+            .shadow(color: baseColor.opacity(0.65), radius: 10, x: -6, y: -6)
     }
 }
 
@@ -137,9 +106,12 @@ public struct PrivadiPrimaryButtonStyle: ButtonStyle {
 }
 
 public struct PrivadiSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
+        let baseColor = colorScheme == .dark ? Color.black : Color.white
         configuration.label
             .font(.system(size: 17, weight: .semibold, design: .rounded))
             .foregroundStyle(PrivadiTheme.ink)
@@ -147,11 +119,11 @@ public struct PrivadiSecondaryButtonStyle: ButtonStyle {
             .padding(.vertical, 18)
             .background {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.76 : 0.64))
+                    .fill(baseColor.opacity(configuration.isPressed ? 0.76 : 0.64))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.78), lineWidth: 1)
+                    .stroke(baseColor.opacity(0.78), lineWidth: 1)
             }
             .shadow(color: PrivadiTheme.accent.opacity(0.08), radius: 20, x: 0, y: 12)
             .scaleEffect(configuration.isPressed ? 0.99 : 1)
@@ -160,21 +132,70 @@ public struct PrivadiSecondaryButtonStyle: ButtonStyle {
 }
 
 public struct PrivadiPillModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
     public init() {}
 
     public func body(content: Content) -> some View {
+        let baseColor = colorScheme == .dark ? Color.black : Color.white
         content
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background {
                 Capsule()
-                    .fill(Color.white.opacity(0.58))
+                    .fill(baseColor.opacity(0.58))
             }
             .overlay {
                 Capsule()
-                    .stroke(Color.white.opacity(0.74), lineWidth: 1)
+                    .stroke(baseColor.opacity(0.74), lineWidth: 1)
             }
             .shadow(color: PrivadiTheme.accent.opacity(0.06), radius: 16, x: 0, y: 8)
+    }
+}
+
+private struct AdaptiveBackgroundView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if colorScheme == .dark {
+            Color.black
+        } else {
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.96, green: 0.97, blue: 0.99),
+                        Color(red: 0.93, green: 0.95, blue: 0.99),
+                        Color(red: 0.98, green: 0.98, blue: 0.99),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Circle()
+                    .fill(PrivadiTheme.accent.opacity(0.16))
+                    .frame(width: 340, height: 340)
+                    .blur(radius: 90)
+                    .offset(x: -160, y: -240)
+
+                Circle()
+                    .fill(PrivadiTheme.accentLavender.opacity(0.22))
+                    .frame(width: 300, height: 300)
+                    .blur(radius: 96)
+                    .offset(x: 150, y: 40)
+
+                Circle()
+                    .fill(PrivadiTheme.accentBlush.opacity(0.16))
+                    .frame(width: 360, height: 360)
+                    .blur(radius: 120)
+                    .offset(x: 40, y: 320)
+
+                Circle()
+                    .fill(PrivadiTheme.accentMint.opacity(0.12))
+                    .frame(width: 320, height: 320)
+                    .blur(radius: 110)
+                    .offset(x: -170, y: 460)
+            }
+        }
     }
 }
 

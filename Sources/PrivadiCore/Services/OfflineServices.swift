@@ -16,12 +16,20 @@ import StoreKit
 public struct DemoPhotoLibraryService: PhotoLibraryServiceProtocol {
     public init() {}
 
-    public func loadAssets(scope: ScanScope) async throws -> [MediaAsset] {
+    public func registerChangeObserver(_ callback: @escaping @Sendable () -> Void) {
+        // No-op for demo service
+    }
+
+    public func loadAssets(scope: ScanScope, progressHandler: (@Sendable (Double) -> Void)? = nil) async throws -> [MediaAsset] {
         let assets = SampleData.mediaAssets
+        let result: [MediaAsset]
         if let limit = scope.assetLimit {
-            return Array(assets.prefix(limit))
+            result = Array(assets.prefix(limit))
+        } else {
+            result = assets
         }
-        return assets
+        progressHandler?(1.0)
+        return result
     }
 
     public func currentAccessLevel() -> PhotoLibraryAccessLevel {
@@ -227,6 +235,11 @@ private struct LiveVaultBiometricAuthorizer: VaultBiometricAuthorizing {
         #if canImport(LocalAuthentication)
         let context = LAContext()
         var error: NSError?
+        // Ensure device has authentication (passcode) enabled
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            return false
+        }
+        // Then check if biometrics are available
         return context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
         #else
         return false
@@ -249,6 +262,7 @@ public final class FileVaultService: VaultServiceProtocol {
     private var records: [VaultRecord] = []
     private var cachedKeyData: Data?
     private var cachedConfigurationState: VaultConfigurationState
+    private var auditEvents: [VaultAuditEvent] = []
 
     public init(
         directoryURL: URL? = nil,
@@ -272,6 +286,7 @@ public final class FileVaultService: VaultServiceProtocol {
             records = loadedRecords
         }
         cachedConfigurationState = loadConfigurationState()
+        auditEvents = loadAuditEvents()
     }
 
     public func configurationState() -> VaultConfigurationState {
@@ -279,7 +294,31 @@ public final class FileVaultService: VaultServiceProtocol {
     }
 
     public func configure(passcode: String, enableBiometrics: Bool) throws -> VaultConfigurationState {
-        let rootKeyData = randomKeyData()
+        let isReconfiguring = cachedConfigurationState.isConfigured
+        let rootKeyData: Data
+        if isReconfiguring {
+            // Rotate key: re-encrypt all records with new key
+            guard let oldKeyData = cachedKeyData else {
+                throw VaultServiceError.notConfigured
+            }
+            rootKeyData = randomKeyData()
+            for record in records {
+                let url = directoryURL.appendingPathComponent(record.fileName)
+                guard let data = try? Data(contentsOf: url) else { continue }
+                do {
+                    let sealedBox = try AES.GCM.SealedBox(combined: data)
+                    let decrypted = try AES.GCM.open(sealedBox, using: SymmetricKey(data: oldKeyData))
+                    let newSealedBox = try AES.GCM.seal(decrypted, using: SymmetricKey(data: rootKeyData))
+                    guard let newCombined = newSealedBox.combined else { continue }
+                    try newCombined.write(to: url, options: .atomic)
+                } catch {
+                    // Skip failed re-encryption
+                }
+            }
+        } else {
+            rootKeyData = randomKeyData()
+        }
+
         let wrappedKey = try wrapRootKey(rootKeyData, passcode: passcode)
         try storeKeychainItem(data: wrappedKey, account: KeychainAccount.wrappedKey)
 
@@ -300,6 +339,7 @@ public final class FileVaultService: VaultServiceProtocol {
             biometricsEnabled: biometricsEnabled,
             canUseBiometrics: biometricAuthorizer.canUseBiometrics()
         )
+        logAuditEvent(VaultAuditEvent(eventType: .configured, details: isReconfiguring ? "reconfigured with key rotation" : (biometricsEnabled ? "with biometrics" : "passcode only")))
         return cachedConfigurationState
     }
 
@@ -323,12 +363,14 @@ public final class FileVaultService: VaultServiceProtocol {
         try combined.write(to: directoryURL.appendingPathComponent(record.fileName), options: .atomic)
         records.append(record)
         try persistRecords()
+        logAuditEvent(VaultAuditEvent(eventType: .stored, details: payload.itemType.rawValue))
         return record
     }
 
     public func unlockVault(method: VaultUnlockMethod) async throws {
         let keyData = try await resolveKeyData(for: method)
         cachedKeyData = keyData
+        logAuditEvent(VaultAuditEvent(eventType: .unlocked, details: method == .biometrics ? "biometrics" : "passcode"))
     }
 
     public func unlock(_ record: VaultRecord, method: VaultUnlockMethod) async throws -> VaultPayload {
@@ -344,6 +386,7 @@ public final class FileVaultService: VaultServiceProtocol {
             let sealedBox = try AES.GCM.SealedBox(combined: data)
             let decrypted = try AES.GCM.open(sealedBox, using: SymmetricKey(data: keyData))
             cachedKeyData = keyData
+            logAuditEvent(VaultAuditEvent(eventType: .accessed, details: record.itemType.rawValue))
             return VaultPayload(itemType: record.itemType, rawData: decrypted)
         } catch {
             throw VaultServiceError.invalidPasscode
@@ -403,7 +446,13 @@ public final class FileVaultService: VaultServiceProtocol {
     }
 
     private func wrapRootKey(_ rootKeyData: Data, passcode: String) throws -> Data {
-        let passcodeKey = SymmetricKey(data: Data(SHA256.hash(data: Data(passcode.utf8))))
+        var passcodeData = Data(passcode.utf8)
+        defer {
+            passcodeData.withUnsafeMutableBytes { buffer in
+                memset(buffer.baseAddress, 0, buffer.count)
+            }
+        }
+        let passcodeKey = SymmetricKey(data: Data(SHA256.hash(data: passcodeData)))
         let sealedBox = try AES.GCM.seal(rootKeyData, using: passcodeKey)
         guard let combined = sealedBox.combined else {
             throw VaultServiceError.keychainUnavailable
@@ -412,7 +461,13 @@ public final class FileVaultService: VaultServiceProtocol {
     }
 
     private func unwrapRootKey(_ wrappedKey: Data, passcode: String) throws -> Data {
-        let passcodeKey = SymmetricKey(data: Data(SHA256.hash(data: Data(passcode.utf8))))
+        var passcodeData = Data(passcode.utf8)
+        defer {
+            passcodeData.withUnsafeMutableBytes { buffer in
+                memset(buffer.baseAddress, 0, buffer.count)
+            }
+        }
+        let passcodeKey = SymmetricKey(data: Data(SHA256.hash(data: passcodeData)))
         do {
             let sealedBox = try AES.GCM.SealedBox(combined: wrappedKey)
             return try AES.GCM.open(sealedBox, using: passcodeKey)
@@ -516,7 +571,33 @@ public final class FileVaultService: VaultServiceProtocol {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true,
         ]
+    }
+
+    private func loadAuditEvents() -> [VaultAuditEvent] {
+        let defaults = UserDefaults.standard
+        guard let data = defaults.data(forKey: "vault-audit-events"),
+              let events = try? JSONDecoder().decode([VaultAuditEvent].self, from: data) else {
+            return []
+        }
+        return events
+    }
+
+    private func saveAuditEvents() {
+        let defaults = UserDefaults.standard
+        if let data = try? JSONEncoder().encode(auditEvents) {
+            defaults.set(data, forKey: "vault-audit-events")
+        }
+    }
+
+    private func logAuditEvent(_ event: VaultAuditEvent) {
+        auditEvents.append(event)
+        // Keep only last 50 events
+        if auditEvents.count > 50 {
+            auditEvents.removeFirst(auditEvents.count - 50)
+        }
+        saveAuditEvents()
     }
 }
 
@@ -681,11 +762,32 @@ public final class MockSubscriptionService: SubscriptionServiceProtocol {
     }
 }
 
+@MainActor
 public final class StoreKitSubscriptionService: SubscriptionServiceProtocol {
     private let manageURL = URL(string: "https://apps.apple.com/account/subscriptions")
     private var cachedProducts: [SubscriptionProduct] = []
+    private var updatesTask: Task<Void, Never>?
 
-    public init() {}
+    public init() {
+        self.updatesTask = Task.detached { [weak self] in
+            for await result in Transaction.updates {
+                guard case .verified(let transaction) = result else {
+                    continue
+                }
+                
+                await transaction.finish()
+                
+                // Refresh local state when a transaction update is received
+                if let self = self {
+                    await self.refreshEntitlements()
+                }
+            }
+        }
+    }
+
+    deinit {
+        updatesTask?.cancel()
+    }
 
     public func currentState() async -> SubscriptionState {
         await refreshEntitlements()
@@ -702,9 +804,16 @@ public final class StoreKitSubscriptionService: SubscriptionServiceProtocol {
             guard case .verified(let transaction) = result else {
                 continue
             }
+            
+            // Cleanup: Check if transaction is revoked or expired
             guard transaction.revocationDate == nil else {
                 continue
             }
+            
+            if let expirationDate = transaction.expirationDate, expirationDate < Date() {
+                continue
+            }
+
             guard let plan = SubscriptionPlan.allCases.first(where: { $0.productIdentifier == transaction.productID }) else {
                 continue
             }

@@ -63,7 +63,10 @@ public struct RootView: View {
                 previewAction: viewModel.startLimitedPreview
             )
         case .scanning:
-            ScanProgressView(statusText: viewModel.statusText)
+            ScanProgressView(
+                statusText: viewModel.statusText,
+                progress: viewModel.scanProgress
+            )
         case .dashboard:
             DashboardView(viewModel: viewModel)
         }
@@ -407,9 +410,11 @@ public struct HardPaywallView: View {
 
 public struct ScanProgressView: View {
     let statusText: String
+    let progress: Double
 
-    public init(statusText: String) {
+    public init(statusText: String, progress: Double) {
         self.statusText = statusText
+        self.progress = progress
     }
 
     public var body: some View {
@@ -417,8 +422,22 @@ public struct ScanProgressView: View {
             BrandMark(subtitle: "building your cleanup plan")
                 .padding(.top, 10)
 
-            ScanOrbView(statusText: statusText)
+            ScanOrbView(statusText: statusText, progress: progress)
                 .padding(.top, 6)
+
+            VStack(spacing: 12) {
+                Text("\(Int(progress * 100))%")
+                    .font(PrivadiTheme.valueFont(size: 32))
+                    .foregroundStyle(PrivadiTheme.ink)
+                    .contentTransition(.numericText())
+
+                ProgressView(value: progress)
+                    .tint(PrivadiTheme.accent)
+                    .progressViewStyle(.linear)
+                    .frame(width: 200)
+                    .scaleEffect(x: 1, y: 1.5, anchor: .center)
+                    .clipShape(Capsule())
+            }
 
             VStack(spacing: 16) {
                 FeatureStrip(icon: "photo.on.rectangle.angled", title: "Analyzing duplicates, similar shots, and low-quality captures.")
@@ -802,21 +821,24 @@ private struct StorageOrbView: View {
 
 private struct ScanOrbView: View {
     let statusText: String
+    let progress: Double
 
     var body: some View {
         ZStack {
             StorageOrbView(
-                primaryText: "Scanning",
+                primaryText: progress < 1.0 ? "Scanning" : "Ready",
                 secondaryText: "securely",
                 caption: statusText,
                 size: 320
             )
 
-            VStack(spacing: 16) {
-                ProgressView()
-                    .tint(PrivadiTheme.accent)
-                    .scaleEffect(1.5)
-                    .padding(.bottom, 124)
+            if progress < 1.0 {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .tint(PrivadiTheme.accent)
+                        .scaleEffect(1.5)
+                        .padding(.bottom, 124)
+                }
             }
         }
     }

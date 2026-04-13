@@ -18,9 +18,13 @@ let package = Package(
             targets: ["PrivadiApp"]
         ),
     ],
+    dependencies: [
+        .package(name: "Zxcvbn", url: "https://github.com/paysera/zxcvbn.swift.git", from: "1.0.0"),
+    ],
     targets: [
         .target(
             name: "PrivadiCore",
+            dependencies: ["Zxcvbn"],
             resources: [
                 .process("Resources"),
             ]
