@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct RootView: View {
+    @AppStorage("isDarkMode") private var isDarkMode = false
     @StateObject private var viewModel: AppViewModel
 
     public init(environment: AppEnvironment) {
@@ -32,7 +33,7 @@ public struct RootView: View {
                 .id(stageIdentifier)
             }
         }
-        .preferredColorScheme(.light)
+        .preferredColorScheme(isDarkMode ? .dark : .light)
         .animation(.spring(response: 0.58, dampingFraction: 0.88), value: stageIdentifier)
         .task {
             await viewModel.bootstrap()
@@ -184,6 +185,7 @@ public struct PrivacyPromiseView: View {
                 action()
             }
             .buttonStyle(PrivadiPrimaryButtonStyle())
+            .accessibilityLabel("Start private storage recovery process")
         }
         .frame(maxWidth: .infinity)
     }
@@ -256,6 +258,7 @@ public struct PermissionsPrimerView: View {
                 action()
             }
             .buttonStyle(PrivadiPrimaryButtonStyle())
+            .accessibilityLabel("Grant photo and contact permissions to proceed")
 
             Button("Preview My Library First") {
                 previewAction()
@@ -386,6 +389,7 @@ public struct HardPaywallView: View {
             }
             .buttonStyle(PrivadiSecondaryButtonStyle())
             .disabled(purchaseInProgress != nil || restoreInProgress)
+            .accessibilityLabel("Preview library before subscribing")
 
             HStack(spacing: 14) {
                 Button(restoreInProgress ? "Restoring..." : "Restore Purchases") {
@@ -449,6 +453,7 @@ public struct ScanProgressView: View {
 }
 
 public struct DashboardView: View {
+    @AppStorage("isDarkMode") private var isDarkMode = false
     @ObservedObject var viewModel: AppViewModel
     @State private var email = "compromised@example.com"
     @State private var showVaultSetup = false
@@ -457,18 +462,18 @@ public struct DashboardView: View {
     @State private var vaultPasscodeConfirmation = ""
     @State private var vaultUnlockPasscode = ""
     @State private var enableBiometrics = true
+    @State private var showPrivacyPolicy = false
 
     public init(viewModel: AppViewModel) {
         self.viewModel = viewModel
     }
 
     public var body: some View {
+        let categories = viewModel.cleanupCategories
+        let reclaimableBytes = viewModel.selectedReclaimableBytes()
+        let isLimitedPreview = viewModel.experienceMode == .limitedPreview
         if let summary = viewModel.summary, viewModel.selection != nil {
-            let categories = viewModel.cleanupCategories
-            let reclaimableBytes = viewModel.selectedReclaimableBytes()
-            let isLimitedPreview = viewModel.experienceMode == .limitedPreview
-
-            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 22) {
                 Text("Privadi")
                     .font(PrivadiTheme.titleFont(size: 28))
                     .foregroundStyle(PrivadiTheme.ink)
@@ -571,6 +576,306 @@ public struct DashboardView: View {
                                     ? "Try the offline breach check with a sample or your own address. The email never leaves your device."
                                     : "Check an address against the local breach index. The email never leaves your device."
                             )
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.mutedInk)
+                        }
+                    }
+
+                    TextField("Email", text: $email)
+                        .font(.system(size: 17, weight: .medium, design: .rounded))
+                        .foregroundStyle(PrivadiTheme.ink)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.white.opacity(0.62))
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.78), lineWidth: 1)
+                        }
+
+                    Button("Check Offline") {
+                        viewModel.runBreachCheck(email: email)
+                    }
+                    .buttonStyle(PrivadiSecondaryButtonStyle())
+                    .accessibilityLabel("Check email against local breach database")
+
+                    if let breachResult = viewModel.breachResult {
+                        Text(
+                            breachResult.isBreached
+                                ? "This address appears in the local breach index."
+                                : "No match found in the local breach index."
+                        )
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(breachResult.isBreached ? PrivadiTheme.warning : PrivadiTheme.accent)
+                    }
+                }
+                .privadiGlassCard()
+
+                Button("Privacy Policy") {
+                    showPrivacyPolicy = true
+                }
+                .buttonStyle(PrivadiSecondaryButtonStyle())
+                .accessibilityLabel("View privacy policy and data handling information")
+
+                if isLimitedPreview {
+                    Button("Unlock My Full Private Scan") {
+                        viewModel.showPaywallFromPreview()
+                    }
+                    .buttonStyle(PrivadiPrimaryButtonStyle())
+                    .accessibilityLabel("Subscribe to unlock full scan features")
+                }
+            }
+        } else {
+            EmptyView()
+        }
+    }
+}
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(isLimitedPreview ? "Preview Reclaimable Space" : "Reclaimable Space")
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .foregroundStyle(PrivadiTheme.faintInk)
+
+                Text(reclaimableBytes.privadiByteString)
+                    .font(PrivadiTheme.valueFont(size: 64))
+                    .foregroundStyle(PrivadiTheme.ink)
+                    .contentTransition(.numericText())
+
+                Text(viewModel.statusText)
+                    .font(.system(size: 18, weight: .medium, design: .rounded))
+                    .foregroundStyle(PrivadiTheme.mutedInk)
+            }
+
+            ViewThatFits {
+                HStack(spacing: 12) {
+                    StatusBadge(text: isLimitedPreview ? "Limited device preview" : "100% Offline", icon: "lock.fill")
+                    StatusBadge(text: isLimitedPreview ? "\(summary.totalItems) preview items" : "\(summary.totalItems) items scanned", icon: "sparkles")
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+
+                VStack(spacing: 12) {
+                    StatusBadge(text: isLimitedPreview ? "Limited device preview" : "100% Offline", icon: "lock.fill")
+                    StatusBadge(text: isLimitedPreview ? "\(summary.totalItems) preview items" : "\(summary.totalItems) items scanned", icon: "sparkles")
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            VStack(spacing: 16) {
+                ForEach(categories) { category in
+                    CleanupCategoryCard(
+                        category: category,
+                        isSelected: viewModel.selectedCleanupCategoryIDs.contains(category.id)
+                    ) {
+                        viewModel.toggleCleanupCategory(category.id)
+                    }
+                }
+            }
+
+            Button {
+                viewModel.reviewCleanupPlan()
+            } label: {
+                HStack(spacing: 10) {
+                    Text(
+                        reclaimableBytes > 0
+                            ? (isLimitedPreview ? "Preview \(reclaimableBytes.privadiByteString)" : "Review Delete Plan")
+                            : (isLimitedPreview ? "Preview Cleanup Plan" : "Review Cleanup Plan")
+                    )
+                    Image(systemName: "arrow.right")
+                }
+            }
+            .buttonStyle(PrivadiPrimaryButtonStyle())
+
+            Text("Private Tools")
+                .font(PrivadiTheme.titleFont(size: 24))
+                .foregroundStyle(PrivadiTheme.ink)
+                .padding(.top, 4)
+
+            UtilityCard(
+                title: "Secure Vault",
+                bodyText: isLimitedPreview
+                    ? "\(viewModel.vaultRecords.count) preview items are protected locally. Vault setup is available once you unlock the full scan."
+                    : vaultBodyText,
+                metric: "Vault items: \(viewModel.vaultRecords.count)",
+                icon: "lock.square.stack.fill",
+                buttonTitle: vaultButtonTitle(isLimitedPreview: isLimitedPreview),
+                action: {
+                    if isLimitedPreview {
+                        viewModel.showPaywallFromPreview()
+                    } else if viewModel.vaultAccessState == .unconfigured {
+                        showVaultSetup = true
+                    } else if viewModel.vaultAccessState == .locked {
+                        showVaultUnlock = true
+                    } else {
+                        viewModel.saveSampleToConfiguredVault()
+                    }
+                }
+            )
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
+                    DashboardIconBubble(icon: "envelope.badge.shield.half.filled")
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Email Security Check")
+                            .font(PrivadiTheme.titleFont(size: 22))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text(
+                            isLimitedPreview
+                                ? "Try the offline breach check with a sample or your own address. The email never leaves your device."
+                                : "Check an address against the local breach index. The email never leaves your device."
+                        )
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(PrivadiTheme.mutedInk)
+                    }
+                }
+
+                TextField("Email", text: $email)
+                    .font(.system(size: 17, weight: .medium, design: .rounded))
+                    .foregroundStyle(PrivadiTheme.ink)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .background {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.white.opacity(0.62))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.78), lineWidth: 1)
+                    }
+
+                Button("Check Offline") {
+                    viewModel.runBreachCheck(email: email)
+                }
+                .buttonStyle(PrivadiSecondaryButtonStyle())
+                .accessibilityLabel("Check email against local breach database")
+
+                if let breachResult = viewModel.breachResult {
+                    Text(
+                        breachResult.isBreached
+                            ? "This address appears in the local breach index."
+                            : "No match found in the local breach index."
+                    )
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(breachResult.isBreached ? PrivadiTheme.warning : PrivadiTheme.accent)
+                }
+            }
+            .privadiGlassCard()
+
+            Toggle("Dark Mode", isOn: $isDarkMode)
+
+            Button("Privacy Policy") {
+                showPrivacyPolicy = true
+            }
+            .buttonStyle(PrivadiSecondaryButtonStyle())
+            .accessibilityLabel("View privacy policy and data handling information")
+
+            if isLimitedPreview {
+                Button("Unlock My Full Private Scan") {
+                    viewModel.showPaywallFromPreview()
+                }
+                .buttonStyle(PrivadiPrimaryButtonStyle())
+                .accessibilityLabel("Subscribe to unlock full scan features")
+            }
+        }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(isLimitedPreview ? "Preview Reclaimable Space" : "Reclaimable Space")
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .foregroundStyle(PrivadiTheme.faintInk)
+
+                    Text(reclaimableBytes.privadiByteString)
+                        .font(PrivadiTheme.valueFont(size: 64))
+                        .foregroundStyle(PrivadiTheme.ink)
+                        .contentTransition(.numericText())
+
+                    Text(viewModel.statusText)
+                        .font(.system(size: 18, weight: .medium, design: .rounded))
+                        .foregroundStyle(PrivadiTheme.mutedInk)
+                }
+
+                ViewThatFits {
+                    HStack(spacing: 12) {
+                        StatusBadge(text: isLimitedPreview ? "Limited device preview" : "100% Offline", icon: "lock.fill")
+                        StatusBadge(text: isLimitedPreview ? "\(summary.totalItems) preview items" : "\(summary.totalItems) items scanned", icon: "sparkles")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                    VStack(spacing: 12) {
+                        StatusBadge(text: isLimitedPreview ? "Limited device preview" : "100% Offline", icon: "lock.fill")
+                        StatusBadge(text: isLimitedPreview ? "\(summary.totalItems) preview items" : "\(summary.totalItems) items scanned", icon: "sparkles")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+
+                VStack(spacing: 16) {
+                    ForEach(categories) { category in
+                        CleanupCategoryCard(
+                            category: category,
+                            isSelected: viewModel.selectedCleanupCategoryIDs.contains(category.id)
+                        ) {
+                            viewModel.toggleCleanupCategory(category.id)
+                        }
+                    }
+                }
+
+                Button {
+                    viewModel.reviewCleanupPlan()
+                } label: {
+                    HStack(spacing: 10) {
+                        Text(
+                            reclaimableBytes > 0
+                                ? (isLimitedPreview ? "Preview \(reclaimableBytes.privadiByteString)" : "Review Delete Plan")
+                                : (isLimitedPreview ? "Preview Cleanup Plan" : "Review Cleanup Plan")
+                        )
+                        Image(systemName: "arrow.right")
+                    }
+                }
+                .buttonStyle(PrivadiPrimaryButtonStyle())
+
+                Text("Private Tools")
+                    .font(PrivadiTheme.titleFont(size: 24))
+                    .foregroundStyle(PrivadiTheme.ink)
+                    .padding(.top, 4)
+
+                UtilityCard(
+                    title: "Secure Vault",
+                    bodyText: isLimitedPreview
+                        ? "\(viewModel.vaultRecords.count) preview items are protected locally. Vault setup is available once you unlock the full scan."
+                        : vaultBodyText,
+                    metric: "Vault items: \(viewModel.vaultRecords.count)",
+                    icon: "lock.square.stack.fill",
+                    buttonTitle: vaultButtonTitle(isLimitedPreview: isLimitedPreview),
+                     action: {
+                         if isLimitedPreview {
+                             viewModel.showPaywallFromPreview()
+                         } else if viewModel.vaultAccessState == .unconfigured {
+                             showVaultSetup = true
+                         } else if viewModel.vaultAccessState == .locked {
+                             showVaultUnlock = true
+                         } else {
+                             viewModel.saveSampleToConfiguredVault()
+                         }
+                     }
+                 )
+                )
+
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 14) {
+                        DashboardIconBubble(icon: "envelope.badge.shield.half.filled")
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Email Security Check")
+                                .font(PrivadiTheme.titleFont(size: 22))
+                                .foregroundStyle(PrivadiTheme.ink)
+
+                            Text(
+                                isLimitedPreview
+                                    ? "Try the offline breach check with a sample or your own address. The email never leaves your device."
+                                    : "Check an address against the local breach index. The email never leaves your device."
+                            )
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
                                 .foregroundStyle(PrivadiTheme.mutedInk)
                         }
@@ -594,6 +899,7 @@ public struct DashboardView: View {
                         viewModel.runBreachCheck(email: email)
                     }
                     .buttonStyle(PrivadiSecondaryButtonStyle())
+                    .accessibilityLabel("Check email against local breach database")
 
                     if let breachResult = viewModel.breachResult {
                         Text(
@@ -607,11 +913,18 @@ public struct DashboardView: View {
                 }
                 .privadiGlassCard()
 
+                Button("Privacy Policy") {
+                    showPrivacyPolicy = true
+                }
+                .buttonStyle(PrivadiSecondaryButtonStyle())
+                .accessibilityLabel("View privacy policy and data handling information")
+
                 if isLimitedPreview {
                     Button("Unlock My Full Private Scan") {
                         viewModel.showPaywallFromPreview()
                     }
                     .buttonStyle(PrivadiPrimaryButtonStyle())
+                    .accessibilityLabel("Subscribe to unlock full scan features")
                 }
             }
             .sheet(isPresented: cleanupReviewPresented) {
@@ -668,6 +981,68 @@ public struct DashboardView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showPrivacyPolicy) {
+                PrivacyPolicyView()
+            }
+        }
+        .sheet(isPresented: cleanupReviewPresented) {
+            if let reviewPlan = viewModel.cleanupReviewPlan {
+                CleanupReviewSheet(
+                    plan: reviewPlan,
+                    phase: viewModel.cleanupExecutionPhase,
+                    confirmAction: viewModel.executeCleanupPlan,
+                    cancelAction: viewModel.dismissCleanupReview
+                )
+            } else {
+                EmptyView()
+            }
+        }
+        .sheet(isPresented: $showVaultSetup) {
+            VaultSetupSheet(
+                isBiometricsAvailable: viewModel.vaultConfiguration.canUseBiometrics,
+                passcode: $vaultPasscode,
+                confirmation: $vaultPasscodeConfirmation,
+                enableBiometrics: $enableBiometrics,
+                saveAction: {
+                    guard vaultPasscode == vaultPasscodeConfirmation else {
+                        viewModel.statusText = "The vault passcodes do not match."
+                        return
+                    }
+                    viewModel.configureVault(passcode: vaultPasscode, enableBiometrics: enableBiometrics)
+                    vaultPasscode = ""
+                    vaultPasscodeConfirmation = ""
+                    showVaultSetup = false
+                }
+            )
+        }
+        .sheet(isPresented: $showVaultUnlock) {
+            VaultUnlockSheet(
+                biometricsEnabled: viewModel.vaultConfiguration.biometricsEnabled,
+                passcode: $vaultUnlockPasscode,
+                unlockWithPasscodeAction: {
+                    let passcode = vaultUnlockPasscode
+                    Task {
+                        await viewModel.unlockVault(passcode: passcode)
+                        if viewModel.vaultAccessState == .unlocked {
+                            viewModel.saveSampleToConfiguredVault()
+                            vaultUnlockPasscode = ""
+                            showVaultUnlock = false
+                        }
+                    }
+                },
+                unlockWithBiometricsAction: {
+                    Task {
+                        await viewModel.unlockVaultWithBiometrics()
+                        if viewModel.vaultAccessState == .unlocked {
+                            viewModel.saveSampleToConfiguredVault()
+                            showVaultUnlock = false
+                        }
+                    }
+                }
+            )
+        }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            PrivacyPolicyView()
         }
     }
 
@@ -774,7 +1149,6 @@ private struct StorageOrbView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                )
                 .frame(width: size, height: size)
                 .blur(radius: 24)
 
@@ -1269,9 +1643,10 @@ private struct VaultUnlockSheet: View {
             Form {
                 Section("Unlock Vault") {
                     SecureField("Passcode", text: $passcode)
-                    Button("Unlock with Passcode") {
-                        unlockWithPasscodeAction()
-                    }
+                        Button("Unlock with Passcode") {
+                            unlockWithPasscodeAction()
+                        }
+                        .accessibilityLabel("Unlock vault using passcode")
                 }
 
                 if biometricsEnabled {
@@ -1279,6 +1654,7 @@ private struct VaultUnlockSheet: View {
                         Button("Unlock with Biometrics") {
                             unlockWithBiometricsAction()
                         }
+                        .accessibilityLabel("Unlock vault using biometrics like Face ID")
                     }
                 }
 
@@ -1291,6 +1667,104 @@ private struct VaultUnlockSheet: View {
             .scrollContentBackground(.hidden)
             .background(PrivadiTheme.background.ignoresSafeArea())
             .navigationTitle("Unlock Vault")
+        }
+    }
+}
+
+private struct PrivacyPolicyView: View {
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Privadi Privacy Policy")
+                        .font(PrivadiTheme.titleFont(size: 28))
+                        .foregroundStyle(PrivadiTheme.ink)
+
+                    Group {
+                        Text("**Effective Date:** April 14, 2026")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.mutedInk)
+
+                        Text("Privadi (\"we,\" \"our,\" or \"us\") is committed to protecting your privacy. This Privacy Policy explains how Privadi, an iOS app for private storage recovery, handles your information. By using Privadi, you agree to the terms of this Privacy Policy.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("**Information We Collect**")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("Privadi operates entirely offline and does not collect, store, or transmit any personal information, including but not limited to names, email addresses, phone numbers, or other contact details; photos, videos, or other media content (except temporarily for on-device analysis); location data, device identifiers, or usage analytics; any data related to your device or account. All processing occurs locally on your device. No data is sent to our servers, third-party services, or cloud providers.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("**How We Use Information**")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("Since we do not collect any information, we do not use it for any purposes. Privadi's functionality includes scanning and analyzing photos, videos, and contacts on-device to identify reclaimable storage; providing offline email breach checks using a local database; storing encrypted data in a local vault using your device's Keychain.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("**Data Sharing and Disclosure**")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("We do not share, sell, or disclose any information because we do not collect it. Your data remains on your device at all times.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("**Data Security**")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("We implement industry-standard security measures, including AES-256 encryption for vault data; local Keychain storage for encryption keys; no internet connectivity required for core functions. However, as an offline app, security ultimately depends on your device's security practices.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("**Children's Privacy**")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("Privadi is not intended for children under 13. We do not knowingly collect information from children.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("**Changes to This Privacy Policy**")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("We may update this Privacy Policy from time to time. We will notify you of any changes by updating the effective date.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("**Contact Us**")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("If you have questions about this Privacy Policy, contact us at support@privadi.com.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("**Compliance with Apple Guidelines**")
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+
+                        Text("This app complies with Apple's App Store Review Guidelines, including no data collection or tracking. Privacy manifest declares no collected data types.")
+                            .font(.system(size: 16, weight: .medium, design: .rounded))
+                            .foregroundStyle(PrivadiTheme.ink)
+                    }
+                }
+                .padding(24)
+            }
+            .background(PrivadiTheme.background.ignoresSafeArea())
+            .navigationTitle("Privacy Policy")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Close") {
+                        // Dismiss handled by sheet
+                    }
+                }
+            }
         }
     }
 }
@@ -1328,6 +1802,7 @@ private struct UtilityCard: View {
                 action()
             }
             .buttonStyle(PrivadiSecondaryButtonStyle())
+            .accessibilityLabel("Manage secure vault for private data storage")
         }
         .privadiGlassCard()
     }

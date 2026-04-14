@@ -3,7 +3,7 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
-import Zxcvbn
+
 
 private struct ScanDependencies: Sendable {
     let photoLibraryService: any PhotoLibraryServiceProtocol
@@ -206,10 +206,12 @@ public final class AppViewModel: ObservableObject {
         guard trimmed.count >= 8 else {
             return "Vault passcode must be at least 8 characters long."
         }
-        let zxcvbn = Zxcvbn()
-        let score = zxcvbn.passwordStrength(trimmed)
-        guard score.value >= 3 else {
-            return "Vault passcode is too weak. Estimated crack time: \(score.crackTimeDisplay). Please choose a stronger passcode."
+        // Basic strength check: must contain uppercase, lowercase, and numbers
+        let hasUppercase = trimmed.contains { $0.isUppercase }
+        let hasLowercase = trimmed.contains { $0.isLowercase }
+        let hasNumber = trimmed.contains { $0.isNumber }
+        guard hasUppercase && hasLowercase && hasNumber else {
+            return "Vault passcode must contain uppercase letters, lowercase letters, and numbers."
         }
         return nil
     }
