@@ -2,11 +2,11 @@
 
 ## App Information
 - **App Name:** Privadi
-- **Subtitle:** Private Storage Recovery
-- **Description:** Privadi is an offline iOS app that scans your photos, videos, and contacts to uncover reclaimable storage space. All analysis happens on-device with no cloud upload or data sharing. Features include duplicate detection, compression suggestions, and an encrypted vault for private data protection.
+- **Subtitle:** Offline iPhone Storage Scanner
+- **Description:** Discover and reclaim hidden storage on your iPhone with 100% offline scanning. Privadi analyzes your photos, videos, and contacts locally - no data ever leaves your device. Features AI-powered duplicate detection, smart compression suggestions, and a secure vault for protecting private files. GDPR-compliant, privacy-first design ensures your data stays yours.
 
 ## Keywords
-private storage, photo cleanup, offline scanner, secure vault, storage recovery
+offline storage scanner,private photo cleanup,secure vault iphone,duplicate photo remover,iphone storage recovery,privacy compliant cleaner,local file organizer,gdpr offline scanner,secure iphone vault,private data protection
 
 ## Support URL
 https://privadi.com/support
@@ -18,17 +18,17 @@ https://privadi.com
 https://privadi.com/privacy
 
 ## Screenshots
-- Screenshot 1: Onboarding - Promise of offline privacy
-- Screenshot 2: Permissions - Secure access request
-- Screenshot 3: Scanning - Real-time progress
-- Screenshot 4: Dashboard - Reclaimable space overview
-- Screenshot 5: Vault - Encrypted storage setup
+- Screenshot 1: Onboarding - Privacy promise and offline guarantee
+- Screenshot 2: Permissions - Transparent data access request
+- Screenshot 3: Scanning - Real-time analysis with progress indicators
+- Screenshot 4: Dashboard - Storage insights and cleanup recommendations
+- Screenshot 5: Vault - Encrypted file protection setup
 
 ## Promotional Text
-"Scan your iPhone offline to reclaim gigabytes of storage. No cloud required."
+"Reclaim GBs of storage offline. Your privacy, protected."
 
 ## What's New
-- Added dark mode toggle
-- Improved accessibility with VoiceOver labels
-- Enhanced offline breach check
-- CI/CD pipeline for automated builds
+- Dark mode support for better user experience
+- Enhanced accessibility with comprehensive VoiceOver support
+- Advanced offline breach check with local database
+- Automated CI/CD pipeline for reliable updates
