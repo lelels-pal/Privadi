@@ -630,11 +630,7 @@ public struct DashboardView: View {
         } else {
             EmptyView()
         }
-        return content
     }
-}
-
-            VStack(alignment: .leading, spacing: 10) {
                 Text(isLimitedPreview ? "Preview Reclaimable Space" : "Reclaimable Space")
                     .font(.system(size: 22, weight: .semibold, design: .rounded))
                     .foregroundStyle(PrivadiTheme.faintInk)
