@@ -469,11 +469,11 @@ public struct DashboardView: View {
     }
 
     public var body: some View {
-        let categories = viewModel.cleanupCategories
-        let reclaimableBytes = viewModel.selectedReclaimableBytes()
-        let isLimitedPreview = viewModel.experienceMode == .limitedPreview
         if let summary = viewModel.summary, viewModel.selection != nil {
-                VStack(alignment: .leading, spacing: 22) {
+            let categories = viewModel.cleanupCategories
+            let reclaimableBytes = viewModel.selectedReclaimableBytes()
+            let isLimitedPreview = viewModel.experienceMode == .limitedPreview
+            VStack(alignment: .leading, spacing: 22) {
                 Text("Privadi")
                     .font(PrivadiTheme.titleFont(size: 28))
                     .foregroundStyle(PrivadiTheme.ink)
@@ -630,6 +630,7 @@ public struct DashboardView: View {
         } else {
             EmptyView()
         }
+        return content
     }
 }
 
